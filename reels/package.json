@@ -1,0 +1,27 @@
+{
+  "name": "reels",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion project for editing dance videos into Instagram Reels",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render",
+    "preview": "remotion render --scale=0.5 --crf=26",
+    "still": "remotion still",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.533",
+    "@remotion/fonts": "4.0.533",
+    "@remotion/media-parser": "4.0.533",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.533"
+  },
+  "devDependencies": {
+    "@remotion/google-fonts": "4.0.533",
+    "@types/node": "26.6.4",
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+__pycache__/
+
+# Private footage and anything rendered from it: never commit these.
+raw/
+public/footage/
+public/music/
+review/
+out/
