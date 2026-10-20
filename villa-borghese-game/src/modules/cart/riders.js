@@ -213,7 +213,7 @@ const P = {
   whoa: [[-1.95, 0, 0.45], [-0.45, 0, 0]],
 };
 
-function presetQuat(out, [x, y, z], o) {
+function presetQuat(out, x, y, z, o) {
   return out.setFromEuler(_eul.set(x, o * y, o * z, 'XYZ'));
 }
 
@@ -364,11 +364,11 @@ export function createRiderAnimator(riders, { steerBone, rng }) {
             tmpS.copy(B.arms[ai].position);
             solveArm(tmpS, tmpT, pole.normalize(), r.a, r.b, qU, qF);
           } else {
-            const [u, f] = P[preset];
-            presetQuat(qU, u, o);
-            if (preset === 'wave') presetQuat(qF, [0, 0, f[2] + 0.55 * Math.sin(at * 13)], o);
-            else if (preset === 'cheer') presetQuat(qF, [0, 0, f[2] + 0.15 * Math.sin(at * 9 + ai)], o);
-            else presetQuat(qF, f, o);
+            const u = P[preset][0], f = P[preset][1];
+            presetQuat(qU, u[0], u[1], u[2], o);
+            if (preset === 'wave') presetQuat(qF, 0, 0, f[2] + 0.55 * Math.sin(at * 13), o);
+            else if (preset === 'cheer') presetQuat(qF, 0, 0, f[2] + 0.15 * Math.sin(at * 9 + ai), o);
+            else presetQuat(qF, f[0], f[1], f[2], o);
           }
           const kk = ik === 'wheel' ? Math.min(1, k * 2) : k;
           B.arms[ai].quaternion.slerp(qU, kk);
