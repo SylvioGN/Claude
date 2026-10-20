@@ -1,6 +1,6 @@
 // Everything on screen: title screen with the "Who drives?" picker, touch controls, HUD with the
 // heading-up mini-map, photo moments at the tour stops, photo album, menus and translations.
-// DOM lives in #ui; CSS is injected from ui/style.js. All text goes through STRINGS.
+// DOM lives in #ui; CSS is injected from ui/style.js. All text goes through STRINGS (the logo is the family name).
 import { FAMILY } from '../data/family.js';
 import { LANGS } from '../core/game.js';
 import { stopName as contentName, stopFacts as contentFacts, parkFacts as contentParkFacts } from './content.js';
@@ -93,8 +93,6 @@ const parkFacts = (lang) => contentParkFacts(lang).map((f) => typo(f, lang));
 const LOGO = '<span class="l0">Les Aventures de la</span><span class="l1">Famille Poutot</span><span class="l2">à la Villa Borghese</span>';
 const LANG_NAMES = { en: 'English', it: 'Italiano', fr: 'Français', es: 'Español', pt: 'Português' };
 const SPEECH_LANG = { en: 'en-GB', it: 'it-IT', fr: 'fr-FR', es: 'es-ES', pt: 'pt-BR' };
-// End-screen stars, the same rules as game.stars(): 1 for the tour, 1 for gelato, 1 for careful driving.
-const STAR_GELATO = 12, STAR_BUMPS = 25;
 const PINECONE_HINT = 25; // the pine-cone chip twinkles when a hidden cone is this close
 // one gelato colour per tour stop (markers, stamps)
 const STOP_COLORS = ['#ff9fc0', '#ffd36b', '#8fd3ff', '#b5e47a', '#ffb27d', '#c7a8ff', '#7fe0c6', '#ffc4a8', '#9fc4ff', '#ffe58a', '#a8e6a1', '#ffb3c8'];
@@ -671,6 +669,11 @@ export async function create(ctx) {
   }
   // a different fun fact about the park each time the game is paused
   let factIndex = Math.floor(Math.random() * 16);
+  function refreshFacts(scope = root) {
+    const facts = parkFacts(lang);
+    for (const n of scope.querySelectorAll('.fact p')) n.textContent = facts[n.dataset.i] || '';
+    for (const n of scope.querySelectorAll('.pf-name')) n.textContent = driverName(G.settings.driver | 0);
+  }
 
   function openPause() {
     if (modals.length) { if (G.state === 'playing') G.pause(true); return; }
@@ -698,14 +701,12 @@ export async function create(ctx) {
         </div>
       </div>
     </div>`);
-    const who = q('.whodrives', panel);
-    who.prepend(portrait(drv, 104));
-    q('.pf-name', panel).textContent = driverName(drv);
-    const facts = parkFacts(lang);
-    const fact = facts[factIndex++ % facts.length] || '';
-    q('.fact p', panel).textContent = fact;
-    q('.fact', panel).hidden = !fact;
-    if (canSpeak) tap(q('.f-read', panel), () => speak(`${t('didYouKnow')} ${fact}`));
+    q('.whodrives', panel).prepend(portrait(drv, 104));
+    const factEl = q('.fact p', panel), nFacts = parkFacts(lang).length;
+    factEl.dataset.i = nFacts ? factIndex++ % nFacts : 0;
+    refreshFacts(panel);
+    q('.fact', panel).hidden = !nFacts;
+    if (canSpeak) tap(q('.f-read', panel), () => speak(`${t('didYouKnow')} ${factEl.textContent}`));
     tap(q('.x', panel), resume);
     tap(q('.resume', panel), resume);
     tap(q('.m-map', panel), () => openMap(false));
@@ -715,8 +716,11 @@ export async function create(ctx) {
       closeAllModals();
       const c = ctx.cart;
       G.setState('title');
-      // the same slow, low orbit around the cart as the first title screen (main.js)
-      if (c) ctx.camRig.setMode('title', { x: c.position.x, z: c.position.z, r: 15, h: 4.5, lookY: 2, a: c.heading + Math.PI * 0.7, speed: 0.05 });
+      // the same gently swaying shot as the first title screen (main.js), from behind the cart looking past it
+      if (c) {
+        const x = c.position.x, z = c.position.z, fx = Math.sin(c.heading), fz = Math.cos(c.heading);
+        ctx.camRig.setMode('title', { x, z, r: 12, h: 3.5, a: Math.atan2(-fz, -fx), arc: 0.8, speed: 0.12, lookX: x + fx * 20, lookZ: z + fz * 20, lookY: 5 });
+      }
     });
     confirmButton(q('.m-new', panel), () => { newTour(); resume(); });
     openModal(panel);
@@ -964,13 +968,14 @@ export async function create(ctx) {
 
   // ---------- tour complete ----------
   ev.on('tourComplete', () => {
-    // one star for the tour, one for gelato, one for careful driving: each says how it is earned
+    // one star for the tour, one for gelato, one for careful driving (game.stars()): each says how it is earned
     const stars = Math.max(1, Math.min(3, G.stars()));
-    let lit = [true, G.score.gelato >= STAR_GELATO, G.score.bumps <= STAR_BUMPS];
+    const rules = G.starRules || { gelato: 12, bumps: 25 };
+    let lit = [true, G.score.gelato >= rules.gelato, G.score.bumps <= rules.bumps];
     if (lit.filter(Boolean).length !== stars) lit = [0, 1, 2].map((i) => i < stars);
     const why = [
       `${medalSvg(MEDAL_COLORS.gold)}<b>${stops.length}/${stops.length}</b>`,
-      `${ART.gelato}<b>${STAR_GELATO}</b>`,
+      `${ART.gelato}<b>${rules.gelato}</b>`,
       `${svgIcon('wheel')}<b data-t="fewBumps"></b>`,
     ];
     const panel = el(`<div class="panel finish">
@@ -1048,6 +1053,7 @@ export async function create(ctx) {
     applyStrings();
     refreshToggles();
     refreshDrivers();
+    refreshFacts();
     resetConfirms();
     refreshHud(true);
   });

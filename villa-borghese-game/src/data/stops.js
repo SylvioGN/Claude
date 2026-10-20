@@ -25,4 +25,4 @@ export const MEDALS = [
 
 // Where the adventure begins: on the Pincio, facing west towards the terrace and its view over Rome.
 // Heading convention everywhere: forward = (sin h, 0, cos h); h = PI/2 faces east, h = PI faces north.
-export const START = { anchor: 'napoleone', offsetX: 22, offsetZ: 0, heading: -Math.PI / 2 };
+export const START = { anchor: 'napoleone', offsetX: 22, offsetZ: -6, heading: -Math.PI / 2 };

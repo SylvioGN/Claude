@@ -130,7 +130,7 @@ export function drawMinimap(g, img, size, view, stops, radiusUnits, northLabel, 
   if (sparkle) {
     const [sx, sy] = toScreen(sparkle.x, sparkle.z);
     const tw = 0.75 + 0.25 * Math.sin(time * 7);
-    const a = 7 * u * tw, b = 2 * u * tw;
+    const a = 9 * u * tw, b = 2.4 * u * tw;
     g.save();
     g.translate(sx, sy);
     g.rotate(time * 0.8);
