@@ -27,6 +27,7 @@ const only = args.only ? String(args.only).split(',').map((s) => s.trim()).filte
 for (const m of only) {
   if (!MODULES.includes(m)) throw new Error(`Unknown module "${m}". Known: ${MODULES.join(', ')}`);
 }
+only.sort((a, b) => MODULES.indexOf(a) - MODULES.indexOf(b));
 const outDir = path.resolve(ROOT, args.out ? String(args.out) : 'dist');
 const dev = !!args.dev;
 
