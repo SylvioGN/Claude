@@ -1,12 +1,13 @@
 // Route finding for the guide: the park's avenues as a graph (path polylines joined where they
 // meet or cross) and A* from any point in the park to a goal on an avenue.
 // No three.js in here so it can be tested with plain node.
-import { closestOnSegment, pointInRing, distToRingEdge } from '../../core/geo.js';
+import { closestOnSegment, pointInRing, distToRingEdge, ringBBox } from '../../core/geo.js';
 
 // Cost per unit of length: wide gravel avenues first, footways and dirt paths when they save time.
 const OFF_PATH = 1.8;   // driving across the grass to reach an avenue
 const KIND_COST = { viale: 1, bridge: 1, footway: 1.12, path: 1.3, plaza: 1.05, grass: OFF_PATH };
 const CELL = 12;        // edge hash cell size
+const cellKey = (i, j) => (i + 4096) * 8192 + j + 4096;
 
 // blocked(ax, az, bx, bz): true when a straight hop across the grass would hit a wall or water.
 export function buildRouteGraph(paths, { isInside = () => true, plazas = [], join = 1.5, blocked = () => false } = {}) {
@@ -27,7 +28,7 @@ export function buildRouteGraph(paths, { isInside = () => true, plazas = [], joi
   const segGrid = new Map();
   const cellsOf = (minX, minZ, maxX, maxZ, fn) => {
     for (let j = Math.floor(minZ / CELL); j <= Math.floor(maxZ / CELL); j++) {
-      for (let i = Math.floor(minX / CELL); i <= Math.floor(maxX / CELL); i++) fn(`${i},${j}`);
+      for (let i = Math.floor(minX / CELL); i <= Math.floor(maxX / CELL); i++) fn(cellKey(i, j));
     }
   };
   segs.forEach((s, si) => {
@@ -43,11 +44,13 @@ export function buildRouteGraph(paths, { isInside = () => true, plazas = [], joi
     for (let a = 0; a < list.length; a++) {
       for (let b = a + 1; b < list.length; b++) {
         const i = Math.min(list[a], list[b]), j = Math.max(list[a], list[b]);
+        const s = segs[i], u = segs[j];
+        if (s.bridge || u.bridge) continue;
+        if (Math.max(s.ax, s.bx) < Math.min(u.ax, u.bx) || Math.min(s.ax, s.bx) > Math.max(u.ax, u.bx)) continue;
+        if (Math.max(s.az, s.bz) < Math.min(u.az, u.bz) || Math.min(s.az, s.bz) > Math.max(u.az, u.bz)) continue;
         const key = i * 100003 + j;
         if (seen.has(key)) continue;
         seen.add(key);
-        const s = segs[i], u = segs[j];
-        if (s.bridge || u.bridge) continue;
         const rx = s.bx - s.ax, rz = s.bz - s.az, qx = u.bx - u.ax, qz = u.bz - u.az;
         const den = rx * qz - rz * qx;
         if (Math.abs(den) < 1e-9) continue;
@@ -77,7 +80,7 @@ export function buildRouteGraph(paths, { isInside = () => true, plazas = [], joi
     let best = -1, bd = join * join;
     for (let j = cj - 1; j <= cj + 1; j++) {
       for (let i = ci - 1; i <= ci + 1; i++) {
-        for (const n of nodeGrid.get(`${i},${j}`) || []) {
+        for (const n of nodeGrid.get(cellKey(i, j)) || []) {
           const d = (nx[n] - x) ** 2 + (nz[n] - z) ** 2;
           if (d < bd) { bd = d; best = n; }
         }
@@ -86,7 +89,7 @@ export function buildRouteGraph(paths, { isInside = () => true, plazas = [], joi
     if (best >= 0) return best;
     const id = nx.length;
     nx.push(x); nz.push(z); adj.push([]);
-    const k = `${ci},${cj}`;
+    const k = cellKey(ci, cj);
     if (!nodeGrid.has(k)) nodeGrid.set(k, []);
     nodeGrid.get(k).push(id);
     return id;
@@ -113,9 +116,10 @@ export function buildRouteGraph(paths, { isInside = () => true, plazas = [], joi
 
   // --- 4. squares: the dead ends that open onto the same piazza are joined across it
   for (const pl of plazas) {
+    const bb = ringBBox(pl.r);
     const near = [];
     for (let n = 0; n < nx.length; n++) {
-      if (adj[n].length > 1) continue;
+      if (adj[n].length > 1 || nx[n] < bb.minX - 3 || nx[n] > bb.maxX + 3 || nz[n] < bb.minZ - 3 || nz[n] > bb.maxZ + 3) continue;
       if (pointInRing(nx[n], nz[n], pl.r) || distToRingEdge(nx[n], nz[n], pl.r) < 3) near.push(n);
     }
     for (let a = 0; a < near.length; a++) for (let b = a + 1; b < near.length; b++) link(near[a], near[b], 'plaza');
@@ -148,13 +152,26 @@ export function buildRouteGraph(paths, { isInside = () => true, plazas = [], joi
   };
   members.forEach((list, ci) => {
     if (ci === main) return;
+    const R = 45;
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (const n of list) {
+      minX = Math.min(minX, nx[n] - R); maxX = Math.max(maxX, nx[n] + R);
+      minZ = Math.min(minZ, nz[n] - R); maxZ = Math.max(maxZ, nz[n] + R);
+    }
+    const near = [];
+    for (let ei = 0; ei < edges.length; ei++) {
+      const e = edges[ei];
+      if (comp[e.a] !== main) continue;
+      if (Math.max(nx[e.a], nx[e.b]) < minX || Math.min(nx[e.a], nx[e.b]) > maxX) continue;
+      if (Math.max(nz[e.a], nz[e.b]) < minZ || Math.min(nz[e.a], nz[e.b]) > maxZ) continue;
+      near.push(ei);
+    }
     let best = null;
     for (const n of list) {
-      for (let ei = 0; ei < edges.length; ei++) {
+      for (const ei of near) {
         const e = edges[ei];
-        if (comp[e.a] !== main) continue;
         const c = closestOnSegment(nx[n], nz[n], nx[e.a], nz[e.a], nx[e.b], nz[e.b]);
-        if (c.d2 > 45 * 45 || (best && c.d2 >= best.d2)) continue;
+        if (c.d2 > R * R || (best && c.d2 >= best.d2)) continue;
         if (blocked(nx[n], nz[n], c.x, c.z)) continue;
         best = { n, ei, x: c.x, z: c.z, d2: c.d2, t: c.t };
       }
@@ -184,7 +201,7 @@ export function nearestEdges(graph, x, z, r, max = 6) {
   const found = new Map();
   for (let j = Math.floor((z - r) / CELL); j <= Math.floor((z + r) / CELL); j++) {
     for (let i = Math.floor((x - r) / CELL); i <= Math.floor((x + r) / CELL); i++) {
-      for (const ei of edgeGrid.get(`${i},${j}`) || []) {
+      for (const ei of edgeGrid.get(cellKey(i, j)) || []) {
         if (found.has(ei)) continue;
         const e = edges[ei];
         const c = closestOnSegment(x, z, nx[e.a], nz[e.a], nx[e.b], nz[e.b]);
@@ -255,10 +272,11 @@ export function findRoute(graph, sx, sz, gx, gz, blocked = () => false) {
     goalOn.set(c.edge, v);
   }
 
-  // start: the nearest avenues around the cart (it may be out on the grass)
+  // start: the avenues around the cart (it may be out on the grass, and a hop across a lawn can
+  // beat driving round the block)
   let starts = [];
-  for (const r of [14, 40, 90, 200]) {
-    starts = nearestEdges(graph, sx, sz, r, 8).filter((c) => c.d < 1.5 || !blocked(sx, sz, c.x, c.z));
+  for (const r of [30, 90, 200]) {
+    starts = nearestEdges(graph, sx, sz, r, 14).filter((c) => c.d < 1.5 || !blocked(sx, sz, c.x, c.z));
     if (starts.length) break;
   }
   for (const c of starts) {
@@ -274,22 +292,24 @@ export function findRoute(graph, sx, sz, gx, gz, blocked = () => false) {
 
   const px = (n) => (n < N ? nx[n] : vx[n - N]);
   const pz = (n) => (n < N ? nz[n] : vz[n - N]);
-  const g = new Map([[S, 0]]);
-  const from = new Map();
+  const M = N + vx.length;
+  const g = new Float64Array(M).fill(Infinity);
+  const from = new Int32Array(M).fill(-1);
+  const closed = new Uint8Array(M);
   const open = new Heap();
+  g[S] = 0;
   open.push(direct, S);
-  const closed = new Set();
   while (open.size) {
-    const [, u] = open.pop();
+    const u = open.pop()[1];
     if (u === G) break;
-    if (closed.has(u)) continue;
-    closed.add(u);
-    const gu = g.get(u);
+    if (closed[u]) continue;
+    closed[u] = 1;
+    const gu = g[u];
     const relax = (v, cost) => {
       const gv = gu + cost;
-      if (gv < (g.get(v) ?? Infinity)) {
-        g.set(v, gv);
-        from.set(v, u);
+      if (gv < g[v]) {
+        g[v] = gv;
+        from[v] = u;
         open.push(gv + Math.hypot(gx - px(v), gz - pz(v)), v);
       }
     };
@@ -297,9 +317,9 @@ export function findRoute(graph, sx, sz, gx, gz, blocked = () => false) {
     const ex = extra.get(u);
     if (ex) for (const [v, cost] of ex) relax(v, cost);
   }
-  if (!from.has(G)) return null;
+  if (from[G] < 0) return null;
   const out = [];
-  for (let n = G; n !== undefined; n = from.get(n)) {
+  for (let n = G; n >= 0; n = from[n]) {
     const x = px(n), z = pz(n);
     const last = out[out.length - 1];
     if (!last || Math.hypot(last[0] - x, last[1] - z) > 0.05) out.push([x, z]);
