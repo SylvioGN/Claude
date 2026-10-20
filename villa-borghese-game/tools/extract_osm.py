@@ -151,8 +151,14 @@ def collect(pred, tol=1.0, zone=park_zone, keep_tags=('name',)):
             shp = rel_polygon(rid)
             if shp is None or shp.is_empty or not shp.intersects(zone):
                 continue
-            for ring in poly_rings(shp, tol):
-                feats.append({'name': tg.get('name', ''), 'tags': {k: v for k, v in tg.items() if k in ('building', 'leisure', 'landuse', 'natural', 'amenity', 'water', 'tourism', 'historic', 'man_made', 'height')}, 'ring': ring, 'area': round(Polygon(ring).area), 'rel': rid})
+            geoms = shp.geoms if hasattr(shp, 'geoms') else [shp]
+            for g in geoms:
+                if g.is_empty or g.geom_type != 'Polygon':
+                    continue
+                g = g.simplify(tol)
+                ring = rnd(list(g.exterior.coords)[:-1])
+                holes = [rnd(list(i.coords)[:-1]) for i in g.interiors]
+                feats.append({'name': tg.get('name', ''), 'tags': {k: v for k, v in tg.items() if k in ('building', 'leisure', 'landuse', 'natural', 'amenity', 'water', 'tourism', 'historic', 'man_made', 'height')}, 'ring': ring, 'holes': holes, 'area': round(Polygon(ring).area), 'rel': rid})
     return feats
 
 result['water'] = collect(lambda t: t.get('natural') == 'water' or t.get('amenity') == 'fountain' or t.get('leisure') == 'swimming_pool', 0.5)

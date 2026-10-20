@@ -12,10 +12,11 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 // Every feature module lives in src/modules/<name>.js and exports create(ctx).
+// Order matters: landmarks are built before vegetation/props so trees and benches can avoid them.
 export const MODULES = [
-  'world', 'cityscape', 'vegetation', 'props',
+  'world', 'cityscape',
   'landmarksPincio', 'landmarksLake', 'landmarksCenter', 'landmarksEast', 'landmarksSouth',
-  'cart', 'actors', 'audio', 'ui',
+  'vegetation', 'props', 'cart', 'actors', 'guide', 'audio', 'ui',
 ];
 
 const args = Object.fromEntries(process.argv.slice(2).map((a) => {

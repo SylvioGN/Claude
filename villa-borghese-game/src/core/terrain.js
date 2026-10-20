@@ -72,16 +72,19 @@ export function createTerrain() {
     // lake basin
     if (lake && x > lakeBox.minX - 8 && x < lakeBox.maxX + 8 && z > lakeBox.minZ - 8 && z < lakeBox.maxZ + 8) {
       let edge = Infinity;
-      const r = lake.r;
-      for (let k = 0, m = r.length - 1; k < r.length; m = k++) {
-        const c = closestOnSegment(x, z, r[m][0], r[m][1], r[k][0], r[k][1]);
-        if (c.d2 < edge) edge = c.d2;
+      for (const r of [lake.r, ...(lake.h || [])]) {
+        for (let k = 0, m = r.length - 1; k < r.length; m = k++) {
+          const c = closestOnSegment(x, z, r[m][0], r[m][1], r[k][0], r[k][1]);
+          if (c.d2 < edge) edge = c.d2;
+        }
       }
       edge = Math.sqrt(edge);
-      const inside = pointInRing(x, z, r);
+      const onIsland = (lake.h || []).some((hr) => pointInRing(x, z, hr));
+      const inside = pointInRing(x, z, lake.r) && !onIsland;
       const shore = smoothstep(8, 0, edge);
-      h *= inside ? 0 : 1 - shore; // flat ring around the shore
+      h *= inside || onIsland ? 0 : 1 - shore; // flat ring around the shore
       if (inside) h = -0.9 - 1.6 * smoothstep(0, 6, edge);
+      else if (onIsland) h = 0.35 * smoothstep(0, 2.5, edge);
     }
     // outside the park: the Pincio terrace drops to Piazza del Popolo, Viale del Muro Torto runs in a cutting
     const od = outsideAt(x, z);
@@ -166,7 +169,10 @@ export function createTerrain() {
       for (let cj = cj0; cj <= cj1; cj++) for (let ci = ci0; ci <= ci1; ci++) (pathCells[cj * pcnx + ci] ||= []).push(seg);
     }
   });
-  for (const w of MAP.WATER) fillRing(w.r, SURF.WATER);
+  for (const w of MAP.WATER) {
+    fillRing(w.r, SURF.WATER);
+    for (const hr of w.h || []) fillRing(hr, SURF.GRASS);
+  }
 
   function surfaceAt(x, z) {
     const i = Math.floor((x - sx0) / SG), j = Math.floor((z - sz0) / SG);

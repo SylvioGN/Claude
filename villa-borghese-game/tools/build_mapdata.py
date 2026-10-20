@@ -127,7 +127,10 @@ for w in d['water']:
         kind = 'fountain'
     else:
         kind = 'pond'
-    water.append({'n': w['name'], 'k': kind, 'r': ring_out(pg.exterior.coords)})
+    item = {'n': w['name'], 'k': kind, 'r': ring_out(pg.exterior.coords)}
+    if w.get('holes'):
+        item['h'] = [ring_out(h) for h in w['holes']]
+    water.append(item)
 
 # ---- buildings
 LANDMARK_BUILDINGS = {

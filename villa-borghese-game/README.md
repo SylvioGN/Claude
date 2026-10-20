@@ -69,7 +69,7 @@ src/modules/*.js         feature modules (see below)
 | `NOGO` | fenced areas next to it: `{k: 'zoo' \| 'galoppatoio' \| 'villamedici', r: ring}` |
 | `PATHS` | `{n: name, k: 'viale' \| 'footway' \| 'path' \| 'bridge', w: width, p: [[x, z], ...]}` |
 | `PLAZAS` | paved squares `{n, r}` |
-| `WATER` | `{n, k: 'lake' \| 'fountain' \| 'pond', r}` |
+| `WATER` | `{n, k: 'lake' \| 'fountain' \| 'pond', r, h?: [island rings]}` |
 | `BUILDINGS` | ordinary buildings `{n, h: height, r: footprint}` (landmarks are not in here) |
 | `FOREST`, `LAWNS` | woods (rings) and lawns / gardens / flower beds `{k, r}` |
 | `WALLS` | `{k: 'city_wall' \| 'wall' \| 'fence' \| 'hedge' \| 'retaining_wall', p: polyline}` (gaps already cut where paths cross) |
@@ -94,8 +94,17 @@ ctx = {
   cart  /* set by modules/cart.js: object, position, heading, speed, reset(), freeze(), getHitCircles(), bounce(), pose() */,
   input /* merged each frame: steer -1..1 (right +), throttle 0..1, brake 0..1, honk */,
   touchInput /* written by ui.js */, modules /* every module's returned api by name */,
+  plant(kind, x, z, {scale, ry}) /* request a special tree, planted later by vegetation */,
+  reserve({x, z, r} | {ring}), isReserved(x, z, pad) /* keep random trees/props out */,
 }
 ```
+
+Build order (build.mjs `MODULES`): world, cityscape, the five landmark modules, vegetation, props,
+cart, actors, guide, audio, ui. Later modules can see the colliders and reservations of earlier ones.
+
+Water: `world` draws every water surface in `MAP.WATER` (lake, ponds, fountain basins) and a plain
+stone rim 0.6 high around fountain basins, with the water level of a fountain at
+`heightAt(centre) + 0.45`. Landmark modules add the sculptures, jets and special rims on top.
 
 ### Feature modules
 
@@ -113,6 +122,7 @@ ctx = {
 | `cart` | the golf cart from the photo with the family on board, driving physics, effects |
 | `actors` | pigeons, ducks, joggers, bikes, balls, cones, puddles, gelato and other things to collect |
 | `audio` | synthesized sound effects and music (WebAudio) |
+| `guide` | glowing beacons at the stops, a floating arrow and a dotted route to the next stop, celebrations |
 | `ui` | title screen, driver choice, touch controls, HUD, mini-map, photo cards, menus, translations |
 | `content` | names and kid-friendly facts for every stop in five languages (imported by ui) |
 

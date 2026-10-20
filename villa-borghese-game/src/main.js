@@ -66,7 +66,10 @@ async function boot(hotData) {
   const colliders = new Colliders(terrain.extent);
   colliders.addRing(MAP.BOUNDARY, 'boundary', null, 0.3);
   for (const h of MAP.HOLES) colliders.addRing(h, 'boundary', null, 0.3);
-  for (const w of MAP.WATER) colliders.addRing(w.r, w.k === 'fountain' ? 'fountain' : 'water', w, 0.4);
+  for (const w of MAP.WATER) {
+    colliders.addRing(w.r, w.k === 'fountain' ? 'fountain' : 'water', w, 0.4);
+    for (const hr of w.h || []) colliders.addRing(hr, 'water', w, 0.4);
+  }
   progress(0.2);
 
   const ctx = {
@@ -75,6 +78,21 @@ async function boot(hotData) {
     debug: params.has('debug'), time: 0, modules: {},
     input: { steer: 0, throttle: 0, brake: 0, honk: false }, touchInput: null, keyInput: null,
     cart: null, camRig: null, game: null,
+    // Landmark modules ask for special trees (Piazza di Siena's pines, cypress rows...) with
+    // ctx.plant(kind, x, z, {scale, ry}); modules/vegetation.js plants them with its models.
+    // kinds: 'umbrellaPine' | 'holmOak' | 'cedar' | 'plane' | 'cypress' | 'palm' | 'magnolia' | 'orange' | 'shrub' | 'hedgeBall'
+    plantQueue: [],
+    plant(kind, x, z, opts = {}) { ctx.plantQueue.push({ kind, x, z, ...opts }); },
+    // Areas kept clear of random trees and props: {x, z, r} circles or {ring: [[x, z], ...]}.
+    reserved: [],
+    reserve(area) { ctx.reserved.push(area); },
+    isReserved(x, z, pad = 0) {
+      for (const a of ctx.reserved) {
+        if (a.ring) { if (geo.pointInRing(x, z, a.ring) || (pad > 0 && geo.distToRingEdge(x, z, a.ring) < pad)) return true; }
+        else if (Math.hypot(x - a.x, z - a.z) < a.r + pad) return true;
+      }
+      return false;
+    },
   };
   window.__game = { ctx };
   const keyboard = installKeyboard(ctx);
