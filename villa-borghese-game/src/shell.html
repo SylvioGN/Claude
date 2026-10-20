@@ -1,0 +1,39 @@
+<title>Villa Borghese Cart Adventure</title>
+<style>
+  :root {
+    --sky: #8cc3e8;
+    --ink: #2a2118;
+    --cream: #fff6e3;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--sky);
+    color: var(--ink);
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+  }
+  #app { position: fixed; inset: 0; overflow: hidden; }
+  #game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #ui { position: absolute; inset: 0; pointer-events: none; }
+  #boot {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    background: linear-gradient(#8cc3e8, #cfe6c2);
+    font: 700 20px/1.3 system-ui, sans-serif; color: #2a2118; text-align: center;
+    transition: opacity .4s;
+  }
+  #boot small { display: block; font-weight: 500; font-size: 14px; opacity: .7; margin-top: 6px; }
+  #boot .bar { width: 180px; height: 10px; border-radius: 5px; background: rgba(255,255,255,.6); margin: 14px auto 0; overflow: hidden; }
+  #boot .bar i { display: block; height: 100%; width: 0; background: #e8a33a; transition: width .2s; }
+</style>
+<div id="app">
+  <canvas id="game"></canvas>
+  <div id="ui"></div>
+  <div id="boot"><div>Villa Borghese<small>Loading the park…</small><div class="bar"><i id="bootbar"></i></div></div></div>
+</div>
+<script>/*__BUNDLE__*/</script>
