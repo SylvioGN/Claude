@@ -161,12 +161,18 @@ class TileGeometry {
 // Lambert material whose colour comes from the painted ground canvas, sharpened up close by a
 // tiled detail texture (grass blades on green ground, grain on gravel), with earthy steep banks
 // and plain city ground beyond the painted area.
-export function terrainMaterial(ctx, groundTex, detailTex) {
+// Crisp edges: the coverage mask (1 = paved) is cut at 0.5 with a one-pixel smoothstep, like
+// alpha-tested text. Near an edge the colour is fetched a little way into the side the pixel is
+// on (along the mask gradient), so neither side picks up the other's colour from the blurry
+// colour texels. Far away, where a texel is smaller than a pixel, the plain filtered colour is used.
+export function terrainMaterial(ctx, groundTex, maskTex, detailTex) {
   const { THREE } = ctx;
   const R = REGION;
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const uniforms = {
     uGround: { value: groundTex },
+    uMask: { value: maskTex },
+    uMaskSize: { value: new THREE.Vector2(maskTex.image.width, maskTex.image.height) },
     uDetail: { value: detailTex },
     uRegion: { value: new THREE.Vector4(R.x0, R.z0, 1 / (R.x1 - R.x0), 1 / (R.z1 - R.z0)) },
     uTexel: { value: new THREE.Vector2(1 / groundTex.image.width, 1 / groundTex.image.height) },
@@ -185,6 +191,8 @@ export function terrainMaterial(ctx, groundTex, detailTex) {
 varying vec3 vWPos;
 varying float vUp;
 uniform sampler2D uGround;
+uniform sampler2D uMask;
+uniform vec2 uMaskSize;
 uniform sampler2D uDetail;
 uniform vec4 uRegion;
 uniform vec2 uTexel;
@@ -198,9 +206,24 @@ uniform vec3 uCityGreen;`)
   vec4 d3 = texture2D(uDetail, vWPos.xz * 0.0071 + vec2(0.13, 0.29));
   float macro = d2.a * 0.4 + d3.a * 0.6;
   vec2 guv = (vWPos.xz - uRegion.xy) * uRegion.zw;
-  // ragged, natural edges between surfaces instead of a blurry texel boundary
-  guv += ((d1.b - 0.5) * 1.6 + (d2.b - 0.5) * 2.2) * uTexel;
-  vec3 gc = texture2D(uGround, guv).rgb;
+  // ragged, natural edges between surfaces instead of ruler-straight ones
+  guv += (d2.b - 0.5) * 2.6 * uTexel;
+  vec3 gc;
+  {
+    // crisp edges: which side of the mask's 0.5 line this pixel is on, and the mask gradient
+    vec2 gx = dFdx(guv), gy = dFdy(guv);
+    vec2 ex = gx * uMaskSize, ey = gy * uMaskSize; // mask texels per pixel
+    float m = texture2D(uMask, guv).r;
+    float mx = dFdx(m), my = dFdy(m);
+    float det = ex.x * ey.y - ex.y * ey.x;
+    det = det >= 0.0 ? max(det, 1e-8) : min(det, -1e-8);
+    vec2 grad = vec2(ey.y * mx - ex.y * my, ex.x * my - ey.x * mx) / det; // dm per mask texel
+    float aa = max(fwidth(m) * 0.75, 1e-3);
+    float side = smoothstep(0.5 - aa, 0.5 + aa, m) * 2.0 - 1.0;
+    float closeUp = 1.0 - smoothstep(0.5, 1.2, max(length(ex), length(ey)));
+    vec2 off = grad / max(length(grad), 0.3) * (side * closeUp * 1.6) * uTexel;
+    gc = textureGrad(uGround, guv + off, gx, gy).rgb;
+  }
   vec2 o = max(-guv, guv - 1.0);
   float beyond = max(o.x, o.y);
   if (beyond > 0.0) {

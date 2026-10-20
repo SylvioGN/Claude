@@ -1,5 +1,8 @@
 // Paints the park's ground onto one big canvas mapped by world x/z (top-down "satellite" view):
 // lawns, woods, gravel avenues, plazas, flower beds, the riding ground and the streets around.
+// Alongside it paints a one-channel coverage mask (1 = paved: avenues, plazas, streets; 0 = green
+// ground) that the terrain shader cuts at 0.5, so the edges between gravel and grass stay crisp up
+// close whatever the size of the colour canvas.
 // Also makes the small tiled detail texture (grass blades / gravel grain) the terrain shader adds on top.
 
 // World rectangle covered by the ground canvas: the park, Piazza del Popolo and the edges of the
@@ -13,15 +16,14 @@ const C = {
   forest: '#667a3c',
   viale: '#dcc9a0', vialeEdge: '#b9a57c', rut: '#bea984', footway: '#e0cfa8', path: '#cdb68b', pathEdge: '#a99068',
   plaza: '#e2d3ad', travertine: '#e8dfca', sand: '#e0c58e', sandDark: '#cfae74',
-  soil: '#7b5a3a', lakeBed: '#4f6142', basin: '#d9d2bf', rubber: '#c46a4a',
+  soil: '#6a4e33', bedLeaves: '#3c6a2c', lakeBed: '#4f6142', basin: '#d9d2bf',
 };
-// Flower bed colour sets (October in Rome: begonias, salvias, cyclamen, marigolds).
-const FLOWERS = [
-  ['#d93a48', '#f06a7c', '#ffffff'], ['#f2b830', '#ec8a2c', '#fff0c0'], ['#c8509e', '#9a5ad0', '#f4e8ff'],
-  ['#e03838', '#f4c430', '#ffffff'], ['#f07a9a', '#ffffff', '#c23a6a'],
-];
+// Flower bed tints (October in Rome: begonias, marigolds, cyclamen, salvias). The 3D bedding
+// plants from the vegetation module carry the colour; the ground only takes a hint of it.
+const BED_TINTS = ['#d93a48', '#f2b830', '#c8509e', '#e03838', '#f07a9a'];
 
-export function paintGround(ctx, width) {
+// width: colour canvas width in pixels; maskWidth: coverage mask width (cheap, one byte a texel).
+export function paintGround(ctx, width, maskWidth = width) {
   const { MAP, geo } = ctx;
   const R = REGION;
   const W = width, H = Math.round((width * (R.z1 - R.z0)) / (R.x1 - R.x0));
@@ -32,15 +34,8 @@ export function paintGround(ctx, width) {
   const rnd = ctx.rng('world-ground');
   const X = (x) => (x - R.x0) * S, Y = (z) => (z - R.z0) * S;
 
-  const ring = (r) => {
-    g.moveTo(X(r[0][0]), Y(r[0][1]));
-    for (let i = 1; i < r.length; i++) g.lineTo(X(r[i][0]), Y(r[i][1]));
-    g.closePath();
-  };
-  const line = (p) => {
-    g.moveTo(X(p[0][0]), Y(p[0][1]));
-    for (let i = 1; i < p.length; i++) g.lineTo(X(p[i][0]), Y(p[i][1]));
-  };
+  const ring = (r) => traceRing(g, r, X, Y);
+  const line = (p) => traceLine(g, p, X, Y);
   const fillRing = (r, style, alpha = 1) => { g.globalAlpha = alpha; g.fillStyle = style; g.beginPath(); ring(r); g.fill(); g.globalAlpha = 1; };
   const strokeLines = (list, widthUnits, style, alpha = 1) => {
     g.globalAlpha = alpha; g.strokeStyle = style; g.lineWidth = Math.max(1, widthUnits * S);
@@ -51,6 +46,7 @@ export function paintGround(ctx, width) {
     g.globalAlpha = alpha; g.strokeStyle = style; g.lineWidth = widthUnits * S;
     g.beginPath(); ring(r); g.stroke(); g.globalAlpha = 1;
   };
+  const mask = makeMask(maskWidth, R);
 
   const pat = makePatterns(g, rnd);
   g.lineJoin = 'round'; g.lineCap = 'round';
@@ -58,6 +54,7 @@ export function paintGround(ctx, width) {
   // --- the city around the park
   g.fillStyle = C.asphalt; g.fillRect(0, 0, W, H);
   g.fillStyle = pat.asphalt; g.fillRect(0, 0, W, H);
+  mask.all(1);
   // pavements of sampietrini all around the park walls
   strokeLines([[...MAP.BOUNDARY, MAP.BOUNDARY[0]]], 14, C.sidewalk);
   strokeLines([[...MAP.BOUNDARY, MAP.BOUNDARY[0]]], 14, pat.cobble);
@@ -69,6 +66,8 @@ export function paintGround(ctx, width) {
     strokeLines([muro], 30, pat.grass);
     strokeLines([muro], 11, C.asphalt);
     strokeLines([muro], 11, pat.asphalt);
+    mask.lines([muro], 30, 0);
+    mask.lines([muro], 11, 1);
     g.setLineDash([3 * S, 4 * S]);
     strokeLines([muro], 0.35, '#f4efe2', 0.85);
     g.setLineDash([]);
@@ -86,6 +85,9 @@ export function paintGround(ctx, width) {
     strokeLines(trident, 12, C.cobble);
     strokeLines(trident, 12, pat.cobble);
     strokeLines([[[cx, cz], [cx - 10, cz - 70]]], 14, C.cobble); // Porta del Popolo, Piazzale Flaminio
+    mask.lines(trident, 12, 1);
+    mask.lines([[[cx, cz], [cx - 10, cz - 70]]], 14, 1);
+    mask.ellipse(cx, cz, pp.radius * 1.08, pp.radius * 0.95, 1);
     g.save();
     g.beginPath(); g.ellipse(X(cx), Y(cz), pp.radius * 1.08 * S, pp.radius * 0.95 * S, 0, 0, Math.PI * 2);
     g.fillStyle = '#b5ab9b'; g.fill();
@@ -108,12 +110,14 @@ export function paintGround(ctx, width) {
   for (const n of MAP.NOGO) {
     if (n.k === 'zoo') {
       fillRing(n.r, C.meadow); fillRing(n.r, pat.grass);
+      mask.ring(n.r, 0);
       g.save(); g.beginPath(); ring(n.r); g.clip();
       blotches(g, rnd, n.r, geo, X, Y, S, 70, 6, 16, ['rgba(93,106,53,0.8)', 'rgba(170,140,95,0.55)', 'rgba(110,140,70,0.6)']);
       g.restore();
     } else if (n.k === 'galoppatoio') {
       featherRing(n.r, C.verge, 4, 0.8);
       fillRing(n.r, C.sand); fillRing(n.r, pat.sand);
+      mask.edge(n.r, 4, 0); mask.ring(n.r, 1);
       g.save(); g.beginPath(); ring(n.r); g.clip();
       raked(g, n.r, geo, X, Y, S, 2.2, 'rgba(160,120,70,0.16)');
       g.restore();
@@ -128,6 +132,7 @@ export function paintGround(ctx, width) {
   // --- the park itself
   fillRing(MAP.BOUNDARY, C.meadow);
   fillRing(MAP.BOUNDARY, pat.grass);
+  mask.ring(MAP.BOUNDARY, 0);
   g.save(); g.beginPath(); ring(MAP.BOUNDARY); g.clip();
   // sun-dried patches and lush hollows: October lawns are never one flat green
   blotches(g, rnd, MAP.BOUNDARY, geo, X, Y, S, 260, 5, 20, ['rgba(160,170,80,0.22)', 'rgba(90,140,60,0.25)', 'rgba(175,165,95,0.18)']);
@@ -159,6 +164,7 @@ export function paintGround(ctx, width) {
     featherRing(p.r, C.vialeEdge, 1.4, 0.4);
     fillRing(p.r, paved ? C.travertine : C.plaza);
     fillRing(p.r, paved ? pat.paving : pat.gravel);
+    mask.ring(p.r, 1);
     if (/Scalea/.test(p.n || '')) { // the steps
       g.save(); g.beginPath(); ring(p.r); g.clip();
       stripes(g, p.r, geo, X, Y, S, 0.7, 'rgba(255,255,255,0.35)', 'rgba(120,100,70,0.25)', true);
@@ -166,29 +172,31 @@ export function paintGround(ctx, width) {
     }
   }
 
-  // lawns and gardens: fresh green with mowing stripes
+  // lawns and gardens: fresh green with mowing stripes (their crisp edge comes from the mask)
   for (const l of MAP.LAWNS) {
     if (l.k === 'flowers') continue;
-    featherRing(l.r, C.lawn, 1.5, 0.5);
     fillRing(l.r, C.lawn);
+    mask.ring(l.r, 0);
     g.save(); g.beginPath(); ring(l.r); g.clip();
     stripes(g, l.r, geo, X, Y, S, 2.6, C.lawnLight, C.lawnDark);
     g.fillStyle = pat.lawn; g.fillRect(0, 0, W, H);
     g.restore();
   }
-  // flower beds edged with low box hedges; beds of one garden share their colours
+  // flower beds: dark soil and leaves with a hint of the flowers' colour, edged with low box
+  // hedges; the 3D bedding plants on top carry the colour. Beds of one garden share their colours.
   for (const l of MAP.LAWNS) {
     if (l.k !== 'flowers') continue;
     const [cx, cz] = geo.ringCentroid(l.r);
-    const set = Math.abs(Math.floor(cx / 40) * 7 + Math.floor(cz / 40) * 13) % FLOWERS.length;
+    const tint = BED_TINTS[Math.abs(Math.floor(cx / 40) * 7 + Math.floor(cz / 40) * 13) % BED_TINTS.length];
     fillRing(l.r, C.soil);
     g.save(); g.beginPath(); ring(l.r); g.clip();
-    g.globalAlpha = 0.7; g.fillStyle = FLOWERS[set][0]; g.fillRect(0, 0, W, H); g.globalAlpha = 1;
-    g.fillStyle = pat.leaves; g.fillRect(0, 0, W, H);
-    g.fillStyle = pat.flowers[set]; g.fillRect(0, 0, W, H);
+    g.globalAlpha = 0.55; g.fillStyle = C.bedLeaves; g.fillRect(0, 0, W, H);
+    g.globalAlpha = 1; g.fillStyle = pat.leaves; g.fillRect(0, 0, W, H);
+    g.globalAlpha = 0.15; g.fillStyle = tint; g.fillRect(0, 0, W, H); g.globalAlpha = 1;
     g.restore();
     g.strokeStyle = '#3d6a2e'; g.lineWidth = 0.8 * S;
     g.beginPath(); ring(l.r); g.stroke();
+    mask.ring(l.r, 0); mask.edge(l.r, 0.8, 0);
   }
 
   // water beds (the water surfaces are meshes; this shows through at the edges)
@@ -196,10 +204,12 @@ export function paintGround(ctx, width) {
     if (w.k === 'lake') {
       featherRing(w.r, '#6c7a4a', 2, 0.8);
       fillRing(w.r, C.lakeBed);
+      mask.ring(w.r, 0);
       for (const h of w.h || []) { fillRing(h, C.meadow); fillRing(h, pat.lawn); }
     } else {
       featherRing(w.r, C.travertine, 1.2, 0.9);
       fillRing(w.r, C.basin);
+      mask.edge(w.r, 1.2, 1); mask.ring(w.r, 1);
     }
   }
 
@@ -214,6 +224,9 @@ export function paintGround(ctx, width) {
   strokeLines(paths, 2.8, pat.dirt);
   strokeLines(foot, 3.6, pat.gravel);
   strokeLines(viali, 7, pat.gravel);
+  mask.lines(paths, 2.8, 1);
+  mask.lines(foot, 3.6, 1);
+  mask.lines(viali, 7, 1);
 
   // Piazza di Siena: an oval arena of grass inside a sandy track, with grass banks around it
   function siena(r) {
@@ -224,19 +237,11 @@ export function paintGround(ctx, width) {
     fillRing(scaled(0.84), C.sand); fillRing(scaled(0.84), pat.sand);
     const inner = scaled(0.72);
     fillRing(inner, C.lawn);
+    mask.ring(r, 0); mask.ring(scaled(0.84), 1); mask.ring(inner, 0);
     g.save(); g.beginPath(); ring(inner); g.clip();
     stripes(g, inner, geo, X, Y, S, 3, C.lawnLight, C.lawnDark);
     g.fillStyle = pat.lawn; g.fillRect(0, 0, W, H);
     g.restore();
-  }
-
-  // playgrounds: soft rubber tiles
-  for (const p of MAP.POIS) {
-    if (p.k !== 'playground') continue;
-    g.beginPath(); g.arc(X(p.x), Y(p.z), 7 * S, 0, Math.PI * 2);
-    g.fillStyle = C.rubber; g.fill();
-    g.beginPath(); g.arc(X(p.x), Y(p.z), 4 * S, 0, Math.PI * 2);
-    g.fillStyle = '#5f9a5a'; g.fill();
   }
 
   // gentle large-scale light variation over everything (clouds of shade, sunnier spots)
@@ -247,15 +252,83 @@ export function paintGround(ctx, width) {
   g.drawImage(pat.macro, 0, 0, W, H);
   g.restore();
 
-  return { canvas, width: W, height: H, scale: S, region: R };
+  return { canvas, width: W, height: H, scale: S, region: R, mask: mask.read() };
+}
+
+// Coverage mask painter on its own canvas (same world rectangle, own resolution): every shape is
+// filled with 1 (paved) or 0 (green). read() returns it as bytes, top row first, after a closing
+// (3x3 max, then 3x3 min) that fills slivers of grass under two texels wide (two avenues side by
+// side would leave a wiggly green thread between them) and a 3x3 box blur that gives the edges the
+// soft ramp the shader's 0.5 cut turns into smooth curves.
+function makeMask(width, R) {
+  const S = width / (R.x1 - R.x0);
+  const W = width, H = Math.round((width * (R.z1 - R.z0)) / (R.x1 - R.x0));
+  const [, m] = canvas2d(W, H, true);
+  const X = (x) => (x - R.x0) * S, Y = (z) => (z - R.z0) * S;
+  const style = (v) => (v ? '#fff' : '#000');
+  m.lineJoin = 'round'; m.lineCap = 'round';
+  return {
+    all(v) { m.fillStyle = style(v); m.fillRect(0, 0, W, H); },
+    ring(r, v) { m.fillStyle = style(v); m.beginPath(); traceRing(m, r, X, Y); m.fill(); },
+    ellipse(x, z, rx, rz, v) { m.fillStyle = style(v); m.beginPath(); m.ellipse(X(x), Y(z), rx * S, rz * S, 0, 0, Math.PI * 2); m.fill(); },
+    edge(r, widthUnits, v) { m.strokeStyle = style(v); m.lineWidth = widthUnits * S; m.beginPath(); traceRing(m, r, X, Y); m.stroke(); },
+    lines(list, widthUnits, v) {
+      m.strokeStyle = style(v); m.lineWidth = Math.max(1, widthUnits * S);
+      m.beginPath(); for (const p of list) traceLine(m, p, X, Y); m.stroke();
+    },
+    read() {
+      const src = m.getImageData(0, 0, W, H).data;
+      let a = new Uint8Array(W * H);
+      for (let i = 0; i < a.length; i++) a[i] = src[i * 4];
+      a = filter3(a, W, H, 'max');
+      a = filter3(a, W, H, 'min');
+      return { data: filter3(a, W, H, 'mean'), width: W, height: H };
+    },
+  };
+}
+
+// Separable 3x3 filters over a one-byte image (edges clamp): 'max', 'min' or 'mean' (box blur).
+function filter3(a, W, H, kind) {
+  const op = kind === 'max' ? 0 : kind === 'min' ? 1 : 2;
+  const t = new Uint16Array(W * H), out = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) { // rows
+    const o = y * W;
+    let p = a[o], q = p;
+    for (let x = 0; x < W; x++) {
+      const r = x < W - 1 ? a[o + x + 1] : q;
+      t[o + x] = op === 2 ? p + q + r : op === 0 ? (p > q ? (p > r ? p : r) : q > r ? q : r) : (p < q ? (p < r ? p : r) : q < r ? q : r);
+      p = q; q = r;
+    }
+  }
+  for (let y = 0; y < H; y++) { // columns
+    const o = y * W, up = y > 0 ? o - W : o, dn = y < H - 1 ? o + W : o;
+    for (let x = 0; x < W; x++) {
+      const p = t[up + x], q = t[o + x], r = t[dn + x];
+      out[o + x] = op === 2 ? (p + q + r + 4) / 9 : op === 0 ? (p > q ? (p > r ? p : r) : q > r ? q : r) : (p < q ? (p < r ? p : r) : q < r ? q : r);
+    }
+  }
+  return out;
+}
+
+function traceRing(g, r, X, Y) {
+  g.moveTo(X(r[0][0]), Y(r[0][1]));
+  for (let i = 1; i < r.length; i++) g.lineTo(X(r[i][0]), Y(r[i][1]));
+  g.closePath();
+}
+
+function traceLine(g, p, X, Y) {
+  g.moveTo(X(p[0][0]), Y(p[0][1]));
+  for (let i = 1; i < p.length; i++) g.lineTo(X(p[i][0]), Y(p[i][1]));
 }
 
 // ---------------------------------------------------------------------------------------------
 
-function canvas2d(w, h = w) {
+// Small helper canvas. Canvases read back with getImageData ask for a CPU-side backing store
+// (willReadFrequently), which saves a GPU flush and readback per read.
+function canvas2d(w, h = w, readBack = false) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  return [c, c.getContext('2d')];
+  return [c, c.getContext('2d', readBack ? { willReadFrequently: true } : undefined)];
 }
 
 // Tiling speckle patterns (transparent background, drawn over a base fill).
@@ -303,7 +376,6 @@ function makePatterns(g, rnd) {
     cobble: speck(256, [{ colors: ['#6f675e', '#a89e90', '#80776c', '#b8ae9e'], n: 5000, r0: 0.4, r1: 0.8, alpha: 0.55 }]),
     asphalt: speck(256, [{ colors: ['#6e6a65', '#9a958c', '#78736c'], n: 3500, r0: 0.3, r1: 0.8, alpha: 0.4 }]),
     leaves: speck(128, [{ colors: ['#3f7a30', '#4f8a3a', '#5f9a42'], n: 900, r0: 0.6, r1: 1.4, alpha: 0.9 }]),
-    flowers: FLOWERS.map((cols) => speck(128, [{ colors: cols, n: 900, r0: 0.6, r1: 1.3, alpha: 0.95 }])),
   };
 }
 
@@ -402,7 +474,7 @@ function offsetLine(p, off) {
 export function makeDetailTexture(THREE, rnd, size = 256) {
   const N = size;
   const draw = (fn) => {
-    const [c, s] = canvas2d(N);
+    const [, s] = canvas2d(N, N, true);
     s.fillStyle = 'rgb(128,128,128)'; s.fillRect(0, 0, N, N);
     fn(s);
     return s.getImageData(0, 0, N, N).data;

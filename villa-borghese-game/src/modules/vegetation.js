@@ -1,8 +1,8 @@
 // Vegetation: the umbrella pines, holm oaks, cedars, planes, cypresses, palms, magnolias, potted
 // oranges, shrubs, clipped balls and flower beds that make Villa Borghese feel like itself.
 //
-// Placement lives in vegetation/placement.js, the models in vegetation/models.js and the shared
-// plant material (tint, sway, see-through near the camera) in vegetation/material.js.
+// Placement lives in vegetation/placement.js, the models in vegetation/models.js and the plant
+// materials (tint, sway, see-through near the camera) in vegetation/material.js.
 //
 // Rendering: every model has two InstancedMeshes (near and far detail). Each frame they are
 // refilled with just the plants inside the view frustum and the draw distance, near ones in the
@@ -15,7 +15,7 @@
 // Test hook: ?vegdemo=x,z lines up every model in a row starting at (x, z).
 import * as THREE from 'three';
 import { makeModel, SPECIES } from './vegetation/models.js';
-import { createPlantMaterial, createShadeMaterial } from './vegetation/material.js';
+import { createPlantMaterials, createShadeMaterial } from './vegetation/material.js';
 import { planPlants, demoPlants } from './vegetation/placement.js';
 
 const LOD_DIST = { low: 50, med: 75, high: 115 };
@@ -41,7 +41,7 @@ export async function create(ctx) {
     items.push(...demoPlants(x, z));
   }
 
-  const { material, uniforms } = createPlantMaterial();
+  const { near: nearMaterial, far: farMaterial, uniforms } = createPlantMaterials();
   const root = new THREE.Group();
   root.name = 'vegetation';
   scene.add(root);
@@ -72,7 +72,7 @@ export async function create(ctx) {
       b.sph[i * 4 + 3] = bs.radius * Math.max(it.s, it.sy) * 1.1;
     });
     b.meshes = lods.map((geo, lod) => {
-      const mesh = new THREE.InstancedMesh(geo, material, n);
+      const mesh = new THREE.InstancedMesh(geo, lod === 0 ? nearMaterial : farMaterial, n);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.setColorAt(0, _col);
       mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
@@ -135,7 +135,9 @@ export async function create(ctx) {
     if (!force && Math.abs(cam.x - last.x) + Math.abs(cam.y - last.y) + Math.abs(cam.z - last.z) < 0.25
       && dir.x * last.dx + dir.y * last.dy + dir.z * last.dz > 0.99995 && Math.abs(cx - last.cx) + Math.abs(cz - last.cz) < 1
       && Math.abs(camera.fov - last.fov) < 0.1 && camera.aspect === last.aspect) return;
-    Object.assign(last, { x: cam.x, y: cam.y, z: cam.z, dx: dir.x, dy: dir.y, dz: dir.z, cx, cz, fov: camera.fov, aspect: camera.aspect });
+    last.x = cam.x; last.y = cam.y; last.z = cam.z;
+    last.dx = dir.x; last.dy = dir.y; last.dz = dir.z;
+    last.cx = cx; last.cz = cz; last.fov = camera.fov; last.aspect = camera.aspect;
     camera.updateMatrixWorld();
     _frustum.setFromProjectionMatrix(_pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     const planes = _frustum.planes;
@@ -184,8 +186,8 @@ export async function create(ctx) {
       uniforms.uTime.value = t;
       const cart = ctx.cart?.position;
       if (cart) uniforms.uCart.value.set(cart.x, cart.y + 1.2, cart.z);
-      const mode = ctx.camRig?.mode;
-      uniforms.uSeeThrough.value = cart && (mode === 'chase' || mode === 'photo') ? 1 : 0;
+      // only the chase camera sees through trunks to the cart; souvenir photos stay clean
+      uniforms.uSeeThrough.value = cart && ctx.camRig?.mode === 'chase' ? 1 : 0;
       cull(false);
     },
   };
@@ -195,11 +197,14 @@ function setCount(mesh, n) {
   mesh.count = n;
   mesh.visible = n > 0;
   if (!n) return;
-  for (const attr of [mesh.instanceMatrix, mesh.instanceColor]) {
-    attr.clearUpdateRanges();
-    attr.addUpdateRange(0, n * attr.itemSize);
-    attr.needsUpdate = true;
-  }
+  markUpdated(mesh.instanceMatrix, n);
+  markUpdated(mesh.instanceColor, n);
+}
+
+function markUpdated(attr, n) {
+  attr.clearUpdateRanges();
+  attr.addUpdateRange(0, n * attr.itemSize);
+  attr.needsUpdate = true;
 }
 
 // Centre (x, z) and radius of a model's foliage, for its shade disc.

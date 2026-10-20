@@ -2,8 +2,10 @@
 // monument, the Umberto I equestrian monument, Porta Pinciana in the Aurelian Walls and the
 // Galoppatoio riding ground with its horses.
 //
-// Draw calls: one merged mesh per landmark, one textured mesh for every sign and poster, the
-// arena sand, and three instanced meshes for the moving horses, their legs and the riders.
+// Draw calls: one merged mesh per landmark (the big riding ground is cut into fence runs, the
+// stables and the arena so the parts far from the cart are culled), one textured mesh for every
+// sign and poster, the arena sand, and three instanced meshes for the moving horses, their legs
+// and the riders. The Cinema dei Piccoli sets its tour stop's holiday-snapshot view.
 import { createAtlas, ATLAS_SIZE } from './landmarksSouth/atlas.js';
 import { Decals } from './landmarksSouth/parts.js';
 import { buildCinema } from './landmarksSouth/cinema.js';

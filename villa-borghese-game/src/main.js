@@ -252,7 +252,9 @@ async function boot(hotData) {
   // Compile every shader now (hidden things too: celebrations, far landmarks) so play never hitches.
   const hidden = [];
   scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
-  try { await renderer.compileAsync(scene, camera); } catch { renderer.compile(scene, camera); }
+  if (renderer.extensions.has('KHR_parallel_shader_compile')) {
+    try { await renderer.compileAsync(scene, camera); } catch { renderer.compile(scene, camera); }
+  } else renderer.compile(scene, camera);
   for (const o of hidden) o.visible = false;
   updateFogCull();
 

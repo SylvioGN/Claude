@@ -85,8 +85,9 @@ export function createMapImage(MAP, rnd, s = 1.5) {
   return { canvas: c, x0, z0, s, W, H };
 }
 
-// Heading-up circular mini-map. `view` = {x, z, heading}; `stops` = [{x, z, icon, color, visited, next}].
-export function drawMinimap(g, img, size, view, stops, radiusUnits, northLabel) {
+// Heading-up circular mini-map. `view` = {x, z, heading}; `stops` = [{x, z, icon, color, visited, next}];
+// `sparkle` = optional {x, z}: a twinkling golden star (a hidden pine cone nearby), `time` drives the twinkle.
+export function drawMinimap(g, img, size, view, stops, radiusUnits, northLabel, sparkle = null, time = 0) {
   const R = size / 2;
   const cy = R * 1.12; // cart a little below the centre: more map ahead
   const theta = view.heading - Math.PI;
@@ -124,6 +125,25 @@ export function drawMinimap(g, img, size, view, stops, radiusUnits, northLabel) 
     if (st.next) { g.lineWidth = 1.4 * u; g.strokeStyle = '#2a2118'; g.beginPath(); g.arc(sx, sy, mr + 3.4 * u, 0, Math.PI * 2); g.stroke(); }
     if (st.visited) drawIcon(g, 'check', sx, sy, mr * 1.5, '#3f9b3a');
     else drawIcon(g, st.icon, sx, sy, mr * 1.45, '#2a2118');
+  }
+
+  if (sparkle) {
+    const [sx, sy] = toScreen(sparkle.x, sparkle.z);
+    const tw = 0.75 + 0.25 * Math.sin(time * 7);
+    const a = 7 * u * tw, b = 2 * u * tw;
+    g.save();
+    g.translate(sx, sy);
+    g.rotate(time * 0.8);
+    g.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const c = Math.cos((i * Math.PI) / 2), s = Math.sin((i * Math.PI) / 2);
+      g.lineTo(c * a, s * a);
+      g.lineTo((c - s) * b, (s + c) * b);
+    }
+    g.closePath();
+    g.fillStyle = '#ffd23f'; g.fill();
+    g.lineWidth = 1.2 * u; g.strokeStyle = '#b77818'; g.stroke();
+    g.restore();
   }
 
   // north badge on the rim

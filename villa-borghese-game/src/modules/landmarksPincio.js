@@ -1,11 +1,13 @@
-// Pincio hill: the terrace over Piazza del Popolo, the water clock, the Moses fountain, the
-// Obelisk of Antinous, Casina Valadier, the San Carlino puppet theatre, the footbridge over
-// Viale del Muro Torto and the marble busts lining the avenues.
+// Pincio hill: the terrace over Piazza del Popolo (with the slope below it down to the Dea Roma
+// fountain), the water clock, the Moses fountain, the Obelisk of Antinous, Casina Valadier, the
+// San Carlino puppet theatre, the footbridge over Viale del Muro Torto and the marble busts lining
+// the avenues. Sets the holiday-snapshot views of the 'terrazza' and 'idrocronometro' stops.
 //
 // Each landmark is one merged mesh using the Pincio atlas material (landmarksPincio/kit.js), so
-// dials, signs, hieroglyphs and baluster cut-outs cost no extra draw calls. Moving parts: the
-// clock hands and pendulum (one InstancedMesh) and the two puppets.
-import { TexBuilder, atlasMaterial, offsetPolyline } from './landmarksPincio/kit.js';
+// dials, signs, hieroglyphs and baluster cut-outs cost no extra draw calls; the terrace has a
+// second one, without shadows, for everything down the slope. Moving parts: the clock hands and
+// pendulum (one InstancedMesh) and the two puppets.
+import { TexBuilder, atlasMaterial, offsetPolyline, photoView } from './landmarksPincio/kit.js';
 import { buildTerrace } from './landmarksPincio/terrace.js';
 import { buildClock, createClockHands } from './landmarksPincio/clock.js';
 import { buildMoses, buildObelisk, buildValadier, buildSanCarlino, createPuppets } from './landmarksPincio/monuments.js';
@@ -36,8 +38,11 @@ export async function create(ctx) {
   ctx.reserve({ x: A.valadier.x, z: A.valadier.z, r: 11 });
 
   const terrace = build('terrace', buildTerrace);
+  const slope = terrace?.slope.build(mat, { name: 'pincio-slope', castShadow: false });
+  if (slope) { ctx.scene.add(slope); meshes.slope = slope; }
   const clock = build('clock', buildClock);
   ctx.reserve({ x: clock.x, z: clock.z, r: clock.radius + 2.5 });
+  stopViews(ctx, terrace?.centre, clock); // before the busts and pines, which keep out of the pictures
   const moses = build('moses', buildMoses);
   build('obelisk', buildObelisk);
   build('valadier', buildValadier);
@@ -62,6 +67,18 @@ export async function create(ctx) {
       puppets.update(dt);
     },
   };
+}
+
+// The two tour-stop snapshots (see photoView). The terrace: the cart by the balustrade between
+// the rostral columns of the loggia, St Peter's dome on the skyline behind. The water clock: its
+// pond beside the cart, seen from the south-east with the sun behind the camera.
+function stopViews(ctx, C, clock) {
+  if (C) {
+    const x = C.x + C.nx * 6.85, z = C.z + C.nz * 6.85, [px, pz] = ctx.MAP.BACKDROP.stPeter;
+    const plaza = ctx.terrain.heightAt(C.x - C.nx * 3, C.z - C.nz * 3);
+    photoView(ctx, 'terrazza', { x, z, y: plaza, from: Math.atan2(x - px, z - pz), dist: 21.5, height: 3.2, cart: 10.5, turn: -0.8, aimY: 2.5, width: 16 });
+  }
+  photoView(ctx, 'idrocronometro', { x: clock.x, z: clock.z, from: 0.64, dist: 16.5, height: 4, cart: 11, side: -1, aimY: 3, aimSide: -0.6, width: 7 });
 }
 
 // Umbrella pines framing Piazzale Napoleone and palms by the Casina Valadier café.

@@ -3,7 +3,7 @@
 // paddocks with animals that can be seen over the railing from the park. world.js paints the
 // meadow inside the fence; vegetation.js plants the trees this module asks for.
 import * as THREE from 'three';
-import { C, FrameBuilder, UVBuilder, AnimBuilder, UV, run, beam, railingMaterial } from './kit.js';
+import { C, CellBuilder, UVBuilder, AnimBuilder, UV, run, beam, railingMaterial, photoView } from './kit.js';
 import { giraffe, zebra, elephant, lion, flamingo, deer } from './animals.js';
 
 const PIER = '#dcc9a0', PIER_CAP = '#efe5cf', PLINTH = '#cbbd9c', GATE_WALL = '#e8cf9c', GATE_TRIM = '#f4ead4';
@@ -66,9 +66,11 @@ export function buildZoo(ctx, rnd, animalMats) {
   let gy = Infinity;
   for (let s = -HW; s <= HW; s += 3) for (const d of [-3.4, 0, 0.6]) gy = Math.min(gy, H(gx + gs.dx * s - gs.inx * d, gz + gs.dz * s - gs.inz * d));
 
-  const gb = new FrameBuilder();
+  // static parts and animals are split into 120-unit cells: the fence runs right round the zoo
+  // and the herds are far apart, so far cells drop out of the view, the fog and the shadow pass
+  const gb = new CellBuilder(120);
   const iron = new UVBuilder();
-  const ab = new AnimBuilder();
+  const ab = new AnimBuilder(120);
   gb.setFrame(gx, gy, gz, gry);
   ab.setFrame(gx, gy, gz, gry);
   const gateToWorld = (x, z) => [gx + Math.cos(gry) * x + Math.sin(gry) * z, gz - Math.sin(gry) * x + Math.cos(gry) * z];
@@ -138,6 +140,9 @@ export function buildZoo(ctx, rnd, animalMats) {
     for (const sx of [-1, 1]) colliders.addBox(...gateToWorld(sx * 6.5, (Z0 + Z1) / 2), 5.4, D + 0.4, -gry, 'building');
   }
   ctx.reserve({ ring: [[-HW - 2, -5], [HW + 2, -5], [HW + 2, 4], [-HW - 2, 4]].map(([x, z]) => gateToWorld(x, z)) });
+  // the postcard: the cart on the avenue before the gate, the pavilions, sign and lions behind
+  const gateDir = (x, z) => [Math.cos(gry) * x + Math.sin(gry) * z, -Math.sin(gry) * x + Math.cos(gry) * z];
+  photoView(ctx, 'bioparco', { spot: gateToWorld(0.8, 6.5), face: gateDir(-0.63, 0.78), cam: [...gateToWorld(3, 17.5), 4.2], look: [...gateToWorld(0, 0), 3.5], far: gateToWorld(0, 1), wide: 8 });
 
   // ---------------------------------------------------------------- perimeter railing
   // Open polyline from one side of the gate all the way round to the other.
@@ -344,12 +349,12 @@ export function buildZoo(ctx, rnd, animalMats) {
     }
   }
 
-  const staticMesh = gb.build(undefined, { name: 'bioparco' });
+  const staticMeshes = gb.build(undefined, { name: 'bioparco' });
   const ironMesh = iron.build(railingMaterial(), { name: 'bioparco-railing' });
   const animals = ab.build(animalMats.material, animalMats.depthMaterial, 'bioparco-animals');
   const elephantGroup = groups.find((g) => g.elephant), lionGroup = groups.find((g) => g.lion);
   return {
-    meshes: [staticMesh, ironMesh, animals].filter(Boolean),
+    meshes: [...staticMeshes, ironMesh, ...animals].filter(Boolean),
     gate: { x: gx, z: gz },
     elephant: elephantGroup ? { x: elephantGroup.x, z: elephantGroup.z } : null,
     lion: lionGroup ? { x: lionGroup.x, z: lionGroup.z } : null,

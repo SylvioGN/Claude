@@ -1,6 +1,7 @@
 // World: the ground everything stands on, the water, the sky and the light.
 //  * terrain mesh tiled from the shared height grid, coloured by one big painted ground canvas
-//    (lawns, woods, gravel avenues, plazas, flower beds, streets) plus a tiled detail texture
+//    (lawns, woods, gravel avenues, plazas, flower beds, streets), a coverage mask that keeps the
+//    edges between gravel and grass crisp, and a tiled detail texture
 //  * the lake, ponds and fountain basins with animated water, fountain rims, the lake's stone kerb
 //  * sky dome with sun and drifting clouds, fog matched to the horizon haze, tuned sun/hemi light
 //  * a flat ring of land out to the horizon so the view never ends in a void
@@ -26,18 +27,28 @@ export async function create(ctx) {
   scene.add(sky.mesh);
   scene.background = new THREE.Color(SKY.horizon);
   scene.fog.color.set(SKY.horizon);
-  const fogNear = scene.fog.near, fogFar = scene.fog.far;
+  // base fog range relative to the draw distance (the adaptive quality may pull it in later)
+  const fogNearK = scene.fog.near / quality.drawDistance, fogFarK = scene.fog.far / quality.drawDistance;
 
-  // --- ground textures and terrain
-  const ground = paintGround(ctx, low ? 1024 : 2048);
+  // --- ground textures and terrain: the colour canvas, and the coverage mask that keeps the
+  // gravel/grass edges crisp (one byte a texel, so it stays at full size on every tier)
+  const ground = paintGround(ctx, low ? 1536 : 2048, 2048);
   const groundTex = new THREE.CanvasTexture(ground.canvas);
   groundTex.colorSpace = THREE.SRGBColorSpace;
   groundTex.flipY = false;
   groundTex.wrapS = groundTex.wrapT = THREE.ClampToEdgeWrapping;
   groundTex.anisotropy = Math.min(low ? 4 : 8, renderer.capabilities.getMaxAnisotropy());
+  const maskTex = new THREE.DataTexture(ground.mask.data, ground.mask.width, ground.mask.height, THREE.RedFormat, THREE.UnsignedByteType);
+  maskTex.unpackAlignment = 1;
+  maskTex.wrapS = maskTex.wrapT = THREE.ClampToEdgeWrapping;
+  maskTex.magFilter = THREE.LinearFilter;
+  maskTex.minFilter = THREE.LinearMipmapLinearFilter;
+  maskTex.generateMipmaps = true;
+  maskTex.anisotropy = groundTex.anisotropy;
+  maskTex.needsUpdate = true;
   const detailTex = makeDetailTexture(THREE, ctx.rng('world-detail'), low ? 128 : 256);
   detailTex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-  const { material: groundMat } = terrainMaterial(ctx, groundTex, detailTex);
+  const { material: groundMat } = terrainMaterial(ctx, groundTex, maskTex, detailTex);
   const terrain = buildTerrain(ctx, groundMat);
   scene.add(terrain.group);
 
@@ -60,8 +71,9 @@ export async function create(ctx) {
     sky.mesh.position.copy(p);
     sky.mesh.updateMatrixWorld();
     const lift = Math.max(0, p.y - ctx.terrain.heightAt(p.x, p.z) - 20);
-    scene.fog.near = fogNear + lift * 1.2;
-    scene.fog.far = fogFar + lift * 2.2;
+    const dd = quality.drawDistance;
+    scene.fog.near = dd * fogNearK + lift * 1.2;
+    scene.fog.far = dd * fogFarK + lift * 2.2;
     for (const tile of terrain.tiles) {
       const b = tile.geometry.boundingSphere;
       tile.visible = _v.copy(b.center).distanceTo(p) < scene.fog.far + b.radius;

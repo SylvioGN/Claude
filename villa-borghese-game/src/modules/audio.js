@@ -113,6 +113,7 @@ export async function create(ctx) {
     applyLevels(true);
     // The heavier buffers (plucked strings, gravel, water) are made just after the tap.
     setTimeout(() => {
+      if (!ac) return;
       try {
         for (const [m, b] of songNotes()) synth.ksBuffer(m, b);
         cartSound = new CartSound(ac, chain.sfx);
@@ -122,8 +123,10 @@ export async function create(ctx) {
   }
 
   // Must run inside a user gesture handler (iOS and Chrome only allow sound to start there).
+  // When Web Audio refuses to start, the game stays silent: no retry (and no warning) on every tap.
+  let failed = false;
   function unlock() {
-    if (!AC) return false;
+    if (!AC || failed) return false;
     try {
       if (!ac) build();
       if (wantRunning() && ac.state !== 'running') ac.resume().catch(() => {});
@@ -137,6 +140,9 @@ export async function create(ctx) {
       }
       return true;
     } catch (err) {
+      failed = true;
+      try { ac?.close().catch(() => {}); } catch { /* already closed */ }
+      ac = null;
       console.warn('[audio] unavailable', err);
       return false;
     }

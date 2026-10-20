@@ -41,13 +41,31 @@ function district(x, z) {
 
 // Buildings inside the park: villas, casinos, academies and kiosks.
 export function buildParkBuildings(ctx, chunks, skip) {
-  const { MAP, terrain: T, colliders, rng } = ctx;
+  const { MAP, terrain: T, colliders, rng, geo } = ctx;
+  // OSM puts the odd kiosk right on an avenue: leave out a building that stands mostly within the
+  // width of a viale, where it would trap the cart and swallow the chase camera.
+  const avenues = T.segments.filter((s) => s.kind === 'viale' || s.kind === 'bridge');
+  const onAvenue = (ring) => {
+    const bb = geo.ringBBox(ring);
+    const near = avenues.filter((s) => Math.min(s.ax, s.bx) - s.w / 2 < bb.maxX && Math.max(s.ax, s.bx) + s.w / 2 > bb.minX
+      && Math.min(s.az, s.bz) - s.w / 2 < bb.maxZ && Math.max(s.az, s.bz) + s.w / 2 > bb.minZ);
+    if (!near.length) return false;
+    let n = 0, on = 0;
+    for (let x = bb.minX + 0.5; x < bb.maxX; x += 1) {
+      for (let z = bb.minZ + 0.5; z < bb.maxZ; z += 1) {
+        if (!pointInRing(x, z, ring)) continue;
+        n++;
+        if (near.some((s) => geo.segDist2(x, z, s.ax, s.az, s.bx, s.bz) < (s.w * s.w) / 4)) on++;
+      }
+    }
+    return on * 2 > n;
+  };
   let built = 0;
   MAP.BUILDINGS.forEach((b, idx) => {
     const ring = cleanRing(b.r);
     if (ring.length < 3 || Math.abs(signedArea(ring)) < 6) return;
     const [cx, cz] = centroid(ring);
-    if (skip(cx, cz, ring)) return;
+    if (skip(cx, cz, ring) || onAvenue(ring)) return;
     const rnd = rng(`cityscape:park:${idx}:${b.n}`);
     const floors = Math.max(1, Math.round(b.h / FLOOR));
     const name = b.n || '';
@@ -80,7 +98,11 @@ export function buildCity(ctx, chunks, { specials, rings }) {
     const area = Math.abs(signedArea(ring));
     if (area < 8) return;
     const [cx, cz] = centroid(ring);
-    if (kind === 6 || kind === 7) { specials.push({ kind, ring, cx, cz }); return; }
+    if (kind === 6 || kind === 7) {
+      rings.push(ring); // no city trees on them
+      if (kind === 7) specials.push({ kind, ring, cx, cz }); // the GNAM (6) is landmarksLake's
+      return;
+    }
     if (POPOLO_ZONES.some((z) => pointInRing(cx, cz, z))) return;
     const rnd = rng(`cityscape:city:${idx}`);
     const d = DISTRICTS[district(cx, cz)];

@@ -3,7 +3,7 @@
 // sandcastle, a merry-go-round and a spring horse.
 import * as THREE from 'three';
 import { GeoBuilder, buildGeometry, mats } from '../../core/util.js';
-import { C, Frame, opening, hipRoofGeometry, archRing, archShape } from './kit.js';
+import { C, Frame, opening, hipRoofGeometry, archRing, archShape, photoView } from './kit.js';
 
 export function buildRaffaello(ctx) {
   const { colliders, quality } = ctx;
@@ -179,6 +179,8 @@ export function buildRaffaello(ctx) {
     colliders.addCircle(x, z, r, 'fence');
   }
   colliders.addRing(a.footprint, 'building');
+  // the postcard: the cart on the avenue before the front door, the playground to one side
+  photoView(ctx, 'raffaello', { spot: f.w(1, -15.5), face: f.dir(-0.88, -0.48), cam: [...f.w(-1.5, -27.8), 3.6], look: [...f.w(1.8, -5), 4], far: f.w(0, -6) });
   ctx.reserve({ ring: [f.w(-13, -13), f.w(10.5, -15), f.w(25, -17), f.w(25, -3), f.w(16, 2), f.w(13, 8), f.w(-13, 8)] });
 
   const group = new THREE.Group();

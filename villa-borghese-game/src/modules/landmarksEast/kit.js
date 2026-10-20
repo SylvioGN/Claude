@@ -28,6 +28,28 @@ export class FrameBuilder extends GeoBuilder {
   }
 }
 
+// Spatial cell (square of `size`) holding a world position, for splitting scattered parts.
+const cellKey = (x, z, size) => `${Math.floor(x / size)},${Math.floor(z / size)}`;
+
+// FrameBuilder that sorts its parts into square cells by where they land, so a long fence or
+// scattered paddocks become several compact meshes that view, fog and shadow culling can drop.
+export class CellBuilder extends FrameBuilder {
+  constructor(size = 90) { super(); this.size = size; this.cells = new Map(); }
+  add(geometry, color, matrix = null) {
+    const m = matrix ? this.frame.clone().multiply(matrix) : this.frame.clone();
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    geometry.boundingBox.getCenter(_p).applyMatrix4(m);
+    const key = cellKey(_p.x, _p.z, this.size);
+    if (!this.cells.has(key)) this.cells.set(key, new GeoBuilder());
+    this.cells.get(key).add(geometry, color, m);
+    return this;
+  }
+  // One mesh per cell (named name-0, name-1, ...).
+  build(material = undefined, { name = '', ...opts } = {}) {
+    return [...this.cells.values()].map((gb, i) => gb.build(material, { ...opts, name: `${name}-${i}` })).filter(Boolean);
+  }
+}
+
 // Offsets a polygon ring outwards by d (works for convex and reflex corners).
 export function offsetRing(ring, d) {
   let area = 0;
@@ -286,10 +308,12 @@ export function animalAtlas(rng) {
   }, { wrap: false });
 }
 
-// Merges animal parts in world space with per-vertex animation attributes.
+// Merges animal parts in world space with per-vertex animation attributes, one mesh per square
+// cell of `size` (by where each animal's frame stands) so far-off herds can be culled.
 export class AnimBuilder {
-  constructor() {
-    this.parts = [];
+  constructor(size = 90) {
+    this.cells = new Map();
+    this.size = size;
     this.frame = new THREE.Matrix4();
     this.anim = null;      // {pivot:[x,y,z], axis:[x,y,z], amp, phase, speed, react} in the current frame
     this.uv = UV.white;
@@ -353,21 +377,26 @@ export class AnimBuilder {
     g.setAttribute('aPivot', new THREE.BufferAttribute(pArr, 3));
     g.setAttribute('aAxis', new THREE.BufferAttribute(xArr, 3));
     g.setAttribute('aAnim', new THREE.BufferAttribute(aArr, 4));
-    this.parts.push(g);
+    const key = cellKey(this.frame.elements[12], this.frame.elements[14], this.size);
+    if (!this.cells.has(key)) this.cells.set(key, []);
+    this.cells.get(key).push(g);
     return this;
   }
 
+  // One mesh per cell (named name-0, name-1, ...).
   build(material, depthMaterial, name = '') {
-    if (!this.parts.length) return null;
-    const geo = mergeGeometries(this.parts, false);
-    for (const p of this.parts) p.dispose();
-    this.parts = [];
-    geo.computeBoundingSphere();
-    const mesh = new THREE.Mesh(geo, material);
-    mesh.customDepthMaterial = depthMaterial;
-    Object.assign(mesh, { castShadow: true, receiveShadow: true, name, matrixAutoUpdate: false });
-    mesh.updateMatrix();
-    return mesh;
+    const meshes = [...this.cells.values()].map((parts, i) => {
+      const geo = mergeGeometries(parts, false);
+      for (const p of parts) p.dispose();
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, material);
+      mesh.customDepthMaterial = depthMaterial;
+      Object.assign(mesh, { castShadow: true, receiveShadow: true, name: `${name}-${i}`, matrixAutoUpdate: false });
+      mesh.updateMatrix();
+      return mesh;
+    });
+    this.cells.clear();
+    return meshes;
   }
 }
 
@@ -450,4 +479,30 @@ export function sprayMaterial(color = '#ffffff') {
         #include <fog_fragment>
       }`,
   });
+}
+
+// Authored postcard view for a tour stop: core/game.js parks the cart on `spot` ([x, z]) facing the
+// world direction `face` ([dx, dz]) and core/camera.js frames the photo from `cam` ([x, z, height])
+// towards `look` ([x, z, height]); heights are above the ground at the spot. The corridor from just
+// behind the camera, around the cart, to `far` (default: look) is reserved so the trees and props
+// placed later keep the photo clear; `wide` is its half-width at the far end.
+export function photoView(ctx, id, { spot, face, cam, look, fov, far = look, wide = 5 }) {
+  const stop = ctx.game?.stops?.find((s) => s.id === id);
+  if (!stop) return null;
+  const H = ctx.terrain.heightAt, y = H(spot[0], spot[1]);
+  stop.spotX = spot[0]; stop.spotZ = spot[1];
+  stop.view = {
+    heading: Math.atan2(face[0], face[1]),
+    cam: [cam[0], Math.max(y + cam[2], H(cam[0], cam[1]) + 1.2), cam[1]],
+    look: [look[0], y + look[2], look[1]],
+    ...(fov ? { fov } : {}),
+  };
+  let dx = far[0] - cam[0], dz = far[1] - cam[1];
+  const L = Math.hypot(dx, dz) || 1;
+  dx /= L; dz /= L;
+  const a = (spot[0] - cam[0]) * dx + (spot[1] - cam[1]) * dz, o = -(spot[0] - cam[0]) * dz + (spot[1] - cam[1]) * dx;
+  const w = (a / L) * wide;
+  const P = (s, t) => [cam[0] + dx * s - dz * t, cam[1] + dz * s + dx * t];
+  ctx.reserve({ ring: [P(-2, -4), P(a, Math.min(o - 3.5, -w)), P(L, -wide), P(L, wide), P(a, Math.max(o + 3.5, w)), P(-2, 4)] });
+  return stop.view;
 }

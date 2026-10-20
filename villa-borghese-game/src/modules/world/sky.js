@@ -86,7 +86,7 @@ function cloudTexture(THREE, rnd, W) {
   const mk = () => {
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
-    return [c, c.getContext('2d')];
+    return [c, c.getContext('2d', { willReadFrequently: true })]; // read back below
   };
   const [cd, gd] = mk(), [cl, gl] = mk();
   const puff = (g, x, y, r, a) => {

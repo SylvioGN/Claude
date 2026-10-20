@@ -116,7 +116,8 @@ export function createCameraRig(ctx) {
         wantPos.set(c0[0] + (c0[0] - l0[0]) * 0.12 * settle, c0[1] + 0.6 * settle, c0[2] + (c0[2] - l0[2]) * 0.12 * settle);
         wantLook.set(l0[0], l0[1], l0[2]);
         k = 1 - Math.exp(-dt * 3);
-        cam.fov += ((photo.shot.fov || 58) - cam.fov) * k;
+        const pf = photo.shot.fov || 58;
+        cam.fov += ((cam.aspect < 1 ? pf * 1.3 : pf) - cam.fov) * k; // portrait needs a wider lens
       } else {
         // title: a slow orbit (or a ping-pong arc when orbit.arc is set) around a scenic spot
         orbit.t = (orbit.t || 0) + dt;

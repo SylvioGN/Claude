@@ -172,6 +172,13 @@ export class RigBuilder {
   }
 }
 
+// Marks the first n items of a dynamic buffer for upload (not the whole capacity).
+export function uploadFirst(attr, n) {
+  attr.clearUpdateRanges();
+  attr.addUpdateRange(0, n * attr.itemSize);
+  attr.needsUpdate = true;
+}
+
 // A dynamic InstancedMesh refilled every frame: begin(), push(...) per visible instance, end().
 export class Crowd {
   constructor(scene, geometry, material, capacity, name) {
@@ -224,9 +231,9 @@ export class Crowd {
     m.count = this.n;
     m.visible = this.n > 0;
     if (!this.n) return;
-    m.instanceMatrix.needsUpdate = true;
-    this.anim.needsUpdate = true;
-    this.pal.needsUpdate = true;
-    this.pal2.needsUpdate = true;
+    uploadFirst(m.instanceMatrix, this.n);
+    uploadFirst(this.anim, this.n);
+    uploadFirst(this.pal, this.n);
+    uploadFirst(this.pal2, this.n);
   }
 }

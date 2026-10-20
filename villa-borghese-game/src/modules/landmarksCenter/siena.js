@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GeoBuilder } from '../../core/util.js';
 import { SURF } from '../../core/terrain.js';
-import { C, Frame, Tris, flag } from './kit.js';
+import { C, Frame, Tris, Painted, grainMaterial, flag, photoView } from './kit.js';
 
 // Stadium fitted to the two OSM loop paths (inner loop = offset 0, outer loop ~ offset 5.7).
 const ST = { x: 100.32, z: -33.8, angle: 0.711, A: 43.13, B: 16.33 };
@@ -19,6 +19,7 @@ const PROFILE = [          // terrace cross-section (offset, height), inner -> o
   [BANK0, 0], [BANK0, 0.6], [2.75, 0.6], [2.75, 1.2], [3.9, 1.2], [3.9, 1.8], [4.4, 1.8], [7.4, 1.8], [BANK1, 0],
 ];
 const PROFILE_COLORS = [C.travertine, C.grassLight, C.grassDark, C.grassLight, C.grassDark, C.grassLight, C.gravel, C.grass];
+const LAWN = '#74a646';    // the park's lawn around the arena: banks and ramps fade into it
 
 // Core point and outward normal for arc length s around the offset-0 loop (local u/v).
 function along(s) {
@@ -64,9 +65,9 @@ export function buildSiena(ctx) {
   const { terrain, colliders, quality } = ctx;
   const hi = quality.tier !== 'low';
   const f = new Frame(new GeoBuilder(), ST.x, ST.z, ST.angle);
-  const ground = new Frame(new GeoBuilder(), ST.x, ST.z, ST.angle);
+  const ground = new Painted();
   const H = (u, v) => { const [x, z] = f.w(u, v); return terrain.heightAt(x, z); };
-  const P3 = (u, y, v) => { const [x, z] = f.w(u, v); return [x, terrain.heightAt(x, z) + y, z]; };
+  const P3 = (u, y, v, fade = 0) => { const [x, z] = f.w(u, v); return [x, terrain.heightAt(x, z) + y, z, fade]; };
   const at = (x, z) => { const [u, v] = f.local(x, z); return stadiumLocal(u, v); };
 
   // Entrances: both ends of the long axis plus the two OSM paths that cross the terraces mid-side.
@@ -88,44 +89,49 @@ export function buildSiena(ctx) {
     return [g.s + g.h, s1];
   });
 
-  // --- ground: mown field with stripes, white line, sand track and the sandy entrance ramps
-  const field = [new Tris(), new Tris()];
+  // --- ground: mown field with stripes, white line, sand track and the sandy entrance ramps, with
+  // the grain and the soft worn and lush patches of the park's own lawns and gravel
   const R = ST.B + FIELD, U = CL + R;
   const half = (u) => (Math.abs(u) <= CL ? R : Math.sqrt(Math.max(0, R * R - (Math.abs(u) - CL) ** 2)));
-  const stripes = 18, sw = (2 * U) / stripes;
+  const stripes = 18, sw = (2 * U) / stripes, rows = 12;
   for (let i = 0; i < stripes; i++) {
     const u0 = -U + i * sw, u1 = u0 + sw;
-    const n = Math.abs(u0) > CL || Math.abs(u1) > CL ? 5 : 1;
+    const n = Math.abs(u0) > CL || Math.abs(u1) > CL ? 5 : 2;
+    ground.color(i % 2 ? '#91c35b' : '#7db24c');
     for (let k = 0; k < n; k++) {
       const ua = u0 + ((u1 - u0) * k) / n, ub = u0 + ((u1 - u0) * (k + 1)) / n;
       const ha = half(ua), hb = half(ub);
-      field[i % 2].quad(P3(ua, 0.06, -ha), P3(ua, 0.06, ha), P3(ub, 0.06, hb), P3(ub, 0.06, -hb));
+      for (let r = 0; r < rows; r++) {
+        const ta = (2 * r) / rows - 1, tb = (2 * (r + 1)) / rows - 1;
+        ground.quad(P3(ua, 0.06, ha * ta), P3(ua, 0.06, ha * tb), P3(ub, 0.06, hb * tb), P3(ub, 0.06, hb * ta));
+      }
     }
   }
-  ground.gb.add(field[0].geometry(), '#7db24c');
-  ground.gb.add(field[1].geometry(), '#91c35b');
 
-  const band = (t, s0, s1, d0, y0, d1, y1) => {
+  // Triangles between arc positions s0..s1 across a cross-section [[offset, y, fade?], ...].
+  const band = (t, s0, s1, section) => {
     const ss = samples(s0, s1);
     for (let i = 1; i < ss.length; i++) {
-      const [au, av] = ringUV(ss[i - 1], d0), [bu, bv] = ringUV(ss[i - 1], d1);
-      const [cu, cv] = ringUV(ss[i], d0), [du, dv] = ringUV(ss[i], d1);
-      const a = P3(au, y0, av), b = P3(bu, y1, bv), c = P3(cu, y0, cv), d = P3(du, y1, dv);
-      t.tri(a, b, c); t.tri(c, b, d);
+      for (let k = 1; k < section.length; k++) {
+        const [d0, y0, f0] = section[k - 1], [d1, y1, f1] = section[k];
+        const [au, av] = ringUV(ss[i - 1], d0), [bu, bv] = ringUV(ss[i - 1], d1);
+        const [cu, cv] = ringUV(ss[i], d0), [du, dv] = ringUV(ss[i], d1);
+        const a = P3(au, y0, av, f0), b = P3(bu, y1, bv, f1), c = P3(cu, y0, cv, f0), d = P3(du, y1, dv, f1);
+        t.tri(a, b, c); t.tri(c, b, d);
+      }
     }
   };
-  const track = new Tris(), line = new Tris();
-  band(track, 0, PER, FIELD, 0.05, BANK0, 0.05);
-  band(line, 0, PER, FIELD - 0.12, 0.07, FIELD + 0.18, 0.07);
-  for (const g of gaps) {
-    const round = Math.abs(along(g.s)[2]) > 0.01;
-    band(track, g.s - g.h, g.s + g.h, BANK0, 0.05, round ? BANK1 + 5 : BANK1, 0.05);
-  }
-  ground.gb.add(track.geometry(), '#dcc28c');
-  ground.gb.add(line.geometry(), C.white);
+  ground.color('#dcc28c');
+  band(ground, 0, PER, [[FIELD, 0.05], [-1.5, 0.05], [BANK0, 0.05]]);
+  // the entrance ramps wear away into the lawn at the foot of the banks
+  ground.color('#dcc28c', LAWN);
+  for (const g of gaps) band(ground, g.s - g.h, g.s + g.h, [[BANK0, 0.05], [6, 0.05], [8.5, 0.05, 0.35], [BANK1 - 0.6, 0.03, 0.8], [BANK1, -0.05, 1]]);
+  ground.color(C.white);
+  band(ground, 0, PER, [[FIELD - 0.12, 0.07], [FIELD + 0.18, 0.07]]);
 
-  // --- terraces between the entrances, with travertine end walls at each cut
-  const bank = PROFILE_COLORS.map(() => new Tris());
+  // --- terraces between the entrances, with travertine end walls at each cut; the grass and the
+  // gravel walk on top are painted ground, the outer slope fading into the lawn
+  const kerb = new Tris();
   const caps = new Tris();
   const profile2 = PROFILE.map(([d, y]) => new THREE.Vector2(d, y));
   const capFaces = THREE.ShapeUtils.triangulateShape(profile2, []);
@@ -137,9 +143,11 @@ export function buildSiena(ctx) {
     for (const [a, b, c] of capFaces) caps.facing(pts[a], pts[b], pts[c], dir);
   };
   for (const [s0, s1] of arcs) {
-    for (let k = 1; k < PROFILE.length; k++) {
-      const [d0, y0] = PROFILE[k - 1], [d1, y1] = PROFILE[k];
-      band(bank[k - 1], s0, s1, d0, y0, d1, y1);
+    band(kerb, s0, s1, PROFILE.slice(0, 2));
+    for (let k = 2; k < PROFILE.length; k++) {
+      const last = k === PROFILE.length - 1;
+      ground.color(PROFILE_COLORS[k - 1], last ? LAWN : PROFILE_COLORS[k - 1]);
+      band(ground, s0, s1, [PROFILE[k - 1], [...PROFILE[k], last ? 1 : 0]]);
     }
     cap(s0, -1); cap(s1, 1);
     // gate pillars with ball finials on the kerb at each cut
@@ -157,7 +165,7 @@ export function buildSiena(ctx) {
     colliders.addSegment(...inner[0], ...outer[0], 'wall', null, 0.3);
     colliders.addSegment(...inner[inner.length - 1], ...outer[outer.length - 1], 'wall', null, 0.3);
   }
-  bank.forEach((t, i) => f.gb.add(t.geometry(), PROFILE_COLORS[i]));
+  f.gb.add(kerb.geometry(), C.travertine);
   f.gb.add(caps.geometry(), C.travertineShade);
 
   // --- show-jumping course: striped poles between white wings, flower boxes, a water jump
@@ -225,19 +233,27 @@ export function buildSiena(ctx) {
   const water = { u: -12, v: 1.5, l: 2.6, w: 4.6 };
   {
     const y = H(water.u, water.v);
-    ground.box(water.l + 0.3, 0.08, water.w + 0.3, C.white, water.u, y + 0.02, water.v);
-    ground.box(water.l, 0.06, water.w, '#58ade6', water.u, y + 0.06, water.v);
+    f.box(water.l + 0.3, 0.08, water.w + 0.3, C.white, water.u, y + 0.02, water.v);
+    f.box(water.l, 0.06, water.w, '#58ade6', water.u, y + 0.06, water.v);
     f.box(0.5, 0.5, water.w, '#4f8a3a', water.u - water.l / 2 - 0.4, y, water.v);
     f.box(0.6, 0.12, water.w + 0.2, C.white, water.u - water.l / 2 - 0.4, y, water.v);
   }
 
-  // --- forecourt flags at the west entrance (Italy and Rome)
-  for (const [v, stripes] of [[-10, ['#2e9a48', '#f7f7f2', '#d23a32']], [10, ['#8c1d2c', '#e8b030']]]) {
-    const u = -CL - ST.B - BANK1 - 4;
+  // --- flags of Italy and Rome at the outer corners of the west entrance, clear of the avenue
+  for (const [side, stripes] of [[-1, ['#2e9a48', '#f7f7f2', '#d23a32']], [1, ['#8c1d2c', '#e8b030']]]) {
+    const u = -CL - 28 * Math.cos(0.6), v = side * 28 * Math.sin(0.6);
     flag(f, u, H(u, v), v, 8, stripes, { ry: Math.PI });
     const [x, z] = f.w(u, v);
     colliders.addCircle(x, z, 0.35, 'lamp');
   }
+
+  // --- the postcard: the cart in the wide main entrance, the camera up on the bank across Viale
+  // Pietro Canonica looking down the long axis over the field between the rings of pines
+  const west = CL + ST.B;
+  photoView(ctx, 'siena', {
+    spot: f.w(-(west + 8), 0), face: f.dir(-0.33, -0.94),
+    cam: [...f.w(-(west + 23), -1.5), 7], look: [...f.w(-25, 1.3), 0], far: f.w(-west, 0), wide: 8,
+  });
 
   // --- the ring of umbrella pines: the OSM trees on the terraces plus fill-ins, then two outer rows
   const inGap = (s, pad) => gaps.some((g) => {
@@ -272,21 +288,18 @@ export function buildSiena(ctx) {
     const [u, v] = ringUV(s, 13.5 + prng.range(-1, 1.5));
     const [x, z] = f.w(u, v);
     const np = terrain.nearestPath(x, z);
-    if (np && np.d < np.w / 2 + 3) continue;
+    if ((np && np.d < np.w / 2 + 3) || ctx.isReserved(x, z, 2)) continue;
     if (!terrain.isInside(x, z) || terrain.surfaceAt(x, z) === SURF.PLAZA || inGap(s, 4)) continue;
     ctx.plant('umbrellaPine', x, z, { scale: prng.range(0.9, 1.15), ry: prng.range(0, 6.28) });
   }
-
-  // the photo spot: Viale Pietro Canonica on the long axis, looking in through the main entrance
-  const stop = ctx.game?.stops?.find((s) => s.id === 'siena');
-  if (stop) [stop.spotX, stop.spotZ] = f.w(-(CL + ST.B + 13.3), 0);
 
   // keep random trees and props off the arena and its terraces
   const outline = samples(0, PER).map((s) => f.w(...ringUV(s, BANK1 + 1)));
   ctx.reserve({ ring: outline });
   ctx.reserve({ ring: ctx.MAP.ANCHORS.siena.footprint });
 
-  const groundMesh = ground.gb.build(undefined, { castShadow: false, receiveShadow: true, name: 'siena-ground' });
+  const groundMesh = new THREE.Mesh(ground.geometry(), grainMaterial(ctx.rng('siena-grain')));
+  Object.assign(groundMesh, { name: 'siena-ground', receiveShadow: true, matrixAutoUpdate: false });
   const mesh = f.gb.build(undefined, { name: 'siena' });
   const group = new THREE.Group();
   group.name = 'piazza-di-siena';

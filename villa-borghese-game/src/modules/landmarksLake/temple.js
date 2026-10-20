@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { GeoBuilder, PALETTE } from '../../core/util.js';
 import { pointInRing, distToRingEdge } from '../../core/geo.js';
-import { frame, headingOf, figureTemplate, ionicColumn, stamp, mat } from './kit.js';
+import { frame, headingOf, figureTemplate, ionicColumn, stamp, mat, photoView } from './kit.js';
 
 const STONE = '#ece5d4', STONE_SHADE = '#d2c7ae', STONE_DARK = '#b9ad93', WALL = '#e6d8b8', ROOF = '#b9653f', ROOF_RIDGE = '#9c4f30';
 
@@ -168,4 +168,8 @@ export function buildTemple(ctx, env) {
   }
   ctx.reserve({ ring: island });
   ctx.colliders.addBox(...F.w(0, (back + front) / 2), W, front - back + 1, -h, 'building', { name: 'esculapio' });
+
+  // Tour stop 'lago': the postcard view. The cart waits on the far shore the portico faces, the
+  // temple stands across the water behind it between its cypresses.
+  photoView(ctx, 'lago', { x: A.x, z: A.z, y: y0, from: h, dist: 49.5, height: 4.4, cart: 10.5, side: 1, turn: -0.74, aimY: -1.6, aimSide: 1, width: 12 });
 }

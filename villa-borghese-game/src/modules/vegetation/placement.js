@@ -1,5 +1,6 @@
 // Where every plant in the park goes. Deterministic (ctx.rng), and never on paths, plazas,
-// water, buildings, walls, landmark sites or areas other modules reserved.
+// water, buildings, walls, landmark sites, areas other modules reserved, the souvenir-photo lines
+// of the tour stops or the sites that props furnishes later (playgrounds, cafés, rentals).
 //
 // Order: landmark requests (ctx.plantQueue), OpenStreetMap trees (the monumental cedar and holm
 // oak, the pines around Piazza di Siena, the Valle dei Platani), avenue rows, lawn specimens,
@@ -8,6 +9,7 @@
 import { Colliders } from '../../core/colliders.js';
 import { SURF } from '../../core/terrain.js';
 import { fbm2 } from '../../core/rng.js';
+import { segDist2 } from '../../core/geo.js';
 import { SPECIES } from './models.js';
 
 const ALIASES = { pine: 'umbrellaPine', stonePine: 'umbrellaPine', oak: 'holmOak', ilex: 'holmOak', plane: 'plane', platanus: 'plane', bush: 'shrub', hedge: 'hedgeBall', box: 'hedgeBall', flower: 'flowers', flowerBed: 'flowers' };
@@ -68,8 +70,54 @@ export function planPlants(ctx) {
   }
   const start = ctx.game?.start;
   if (start) keep.addCircle(start.x, start.z, 8);
+  // sites props furnishes later: a playground needs room for its rides, a café for its tables
+  for (const p of MAP.POIS) {
+    if (p.k === 'playground') keep.addCircle(p.x, p.z, 12);
+    else if (p.k === 'cafe' || p.k === 'rental') keep.addCircle(p.x, p.z, 5);
+  }
   const inZone = (x, z) => zones.some((zn) => x > zn.bb.minX - zn.pad && x < zn.bb.maxX + zn.pad && z > zn.bb.minZ - zn.pad && z < zn.bb.maxZ + zn.pad
     && (geo.pointInRing(x, z, zn.ring) || geo.distToRingEdge(x, z, zn.ring) < zn.pad));
+
+  // Souvenir photos: the stretch from each stop's photo spot (where the cart parks) to the
+  // landmark stays clear; with an authored view, so do the triangle from its camera to the spot and
+  // the landmark, and a fan in front of the camera (the near foreground of the frame).
+  const photo = [];
+  const addPhotoRing = (ring, pad) => photo.push({ ring, bb: geo.ringBBox(ring), pad });
+  for (const st of ctx.game?.stops || []) {
+    const sx = st.spotX ?? st.x, sz = st.spotZ ?? st.z;
+    photo.push({ ring: null, ax: sx, az: sz, bx: st.x, bz: st.z, pad: 2.5 });
+    const cam = st.view?.cam, look = st.view?.look;
+    if (!cam) continue;
+    const [cx, cz] = [cam[0], cam[2]];
+    addPhotoRing([[cx, cz], [sx, sz], [st.x, st.z]], 3);
+    const a0 = Math.atan2((look ? look[2] : sz) - cz, (look ? look[0] : sx) - cx);
+    const reach = 0.75 * Math.hypot(sx - cx, sz - cz);
+    const fan = [[cx, cz]];
+    for (let k = -2; k <= 2; k++) fan.push([cx + Math.cos(a0 + k * 0.4) * reach, cz + Math.sin(a0 + k * 0.4) * reach]);
+    addPhotoRing(fan, 1);
+  }
+  const inPhoto = (x, z, clear) => photo.some((ph) => {
+    const pad = ph.pad + clear;
+    if (!ph.ring) return segDist2(x, z, ph.ax, ph.az, ph.bx, ph.bz) < pad * pad;
+    return x > ph.bb.minX - pad && x < ph.bb.maxX + pad && z > ph.bb.minZ - pad && z < ph.bb.maxZ + pad
+      && (geo.pointInRing(x, z, ph.ring) || geo.distToRingEdge(x, z, ph.ring) < pad);
+  });
+
+  // A trunk of radius r that a landmark or the map put on (or right next to) a path is moved
+  // sideways off it; null when that takes more than 3 units.
+  function offPath(x, z, r) {
+    const x0 = x, z0 = z;
+    for (let k = 0; k < 4; k++) {
+      const p = T.nearestPath(x, z);
+      const need = p ? p.w / 2 + r + 0.3 : 0;
+      if (!p || p.d >= need) return Math.hypot(x - x0, z - z0) <= 3 ? [x, z] : null;
+      let nx = x - p.x, nz = z - p.z;
+      const L = Math.hypot(nx, nz);
+      if (L > 1e-3) { nx /= L; nz /= L; } else { nx = -p.dirZ; nz = p.dirX; }
+      x = p.x + nx * (need + 0.05); z = p.z + nz * (need + 0.05);
+    }
+    return null;
+  }
 
   const lawns = MAP.LAWNS.map((l) => ({ ...l, bb: geo.ringBBox(l.r), area: geo.ringArea(l.r) }));
   const lawnAt = (x, z) => lawns.find((l) => x > l.bb.minX && x < l.bb.maxX && z > l.bb.minZ && z < l.bb.maxZ && geo.pointInRing(x, z, l.r));
@@ -87,7 +135,7 @@ export function planPlants(ctx) {
   }
   // The checks that also apply behind the park edge.
   function outsideOk(x, z, clear) {
-    if (ctx.isReserved(x, z, clear)) return false;
+    if (ctx.isReserved(x, z, clear) || inPhoto(x, z, clear)) return false;
     if (!ctx.colliders.isFree(x, z, clear) || !keep.isFree(x, z, clear)) return false;
     return !inZone(x, z);
   }
@@ -138,28 +186,35 @@ export function planPlants(ctx) {
     return 'cypress';
   };
 
-  // 1. requests from landmark modules: planted exactly where asked
+  // 1. requests from landmark modules: planted where asked, just nudged off a path
   {
     const rnd = ctx.rng('veg-queue');
     for (const q of ctx.plantQueue) {
       const kind = SPECIES[q.kind] ? q.kind : ALIASES[q.kind] || 'shrub';
-      put(kind, q.x, q.z, rnd, { s: q.scale ?? 1, ry: q.ry ?? rnd() * Math.PI * 2, v: q.variant ?? Math.floor(rnd() * 8), force: true, tint: q.tint, src: 'queue' });
+      const s = q.scale ?? 1;
+      const at = offPath(q.x, q.z, SPECIES[kind].trunk * s);
+      if (!at) continue;
+      put(kind, at[0], at[1], rnd, { s, ry: q.ry ?? rnd() * Math.PI * 2, v: q.variant ?? Math.floor(rnd() * 8), force: true, tint: q.tint, src: 'queue' });
     }
   }
 
-  // 2. trees mapped one by one in OpenStreetMap
+  // 2. trees mapped one by one in OpenStreetMap (kept off the paths and the photo lines)
   {
     const rnd = ctx.rng('veg-poi');
     const siena = MAP.ANCHORS.siena;
     for (const p of MAP.POIS) {
       if (p.k !== 'tree') continue;
       if (!spacing.free(p.x, p.z, 2.5)) continue; // already planted by a landmark
-      if (!ctx.colliders.isFree(p.x, p.z, 0.8)) continue;
-      if (p.n === 'Cedro monumentale') put('cedar', p.x, p.z, rnd, { s: 1.75, sy: 1.5, v: 0, force: true, src: 'monument' });
-      else if (p.n === 'Leccio monumentale') put('holmOak', p.x, p.z, rnd, { s: 1.9, sy: 1.45, v: 0, force: true, src: 'monument' });
-      else if (p.x > 115 && p.x < 185 && p.z > -190 && p.z < -115) put('plane', p.x, p.z, rnd, { s: 1.35 + rnd() * 0.2, force: true, src: 'poi' });
-      else if (siena && Math.hypot(p.x - siena.x, p.z - siena.z) < 75) put('umbrellaPine', p.x, p.z, rnd, { s: 1.12 + rnd() * 0.15, v: rnd() < 0.5 ? 0 : 2, force: true, src: 'poi' });
-      else put('umbrellaPine', p.x, p.z, rnd, { s: 1 + rnd() * 0.2, force: true, src: 'poi' });
+      let kind = 'umbrellaPine', o = { s: 1 + rnd() * 0.2, src: 'poi' };
+      if (p.n === 'Cedro monumentale') { kind = 'cedar'; o = { s: 1.35, sy: 1.5, v: 1, src: 'monument' }; }
+      else if (p.n === 'Leccio monumentale') { kind = 'holmOak'; o = { s: 1.9, sy: 1.45, v: 0, src: 'monument' }; }
+      else if (p.x > 115 && p.x < 185 && p.z > -190 && p.z < -115) { kind = 'plane'; o = { s: 1.35 + rnd() * 0.2, src: 'poi' }; }
+      else if (siena && Math.hypot(p.x - siena.x, p.z - siena.z) < 75) o = { s: 1.12 + rnd() * 0.15, v: rnd() < 0.5 ? 0 : 2, src: 'poi' };
+      const r = SPECIES[kind].trunk * o.s;
+      const at = offPath(p.x, p.z, r);
+      if (!at || !ctx.colliders.isFree(at[0], at[1], r + 0.3) || inPhoto(at[0], at[1], r)) continue;
+      if (o.src === 'poi' && ctx.isReserved(at[0], at[1], r)) continue;
+      put(kind, at[0], at[1], rnd, { ...o, force: true });
     }
   }
 
@@ -205,7 +260,8 @@ export function planPlants(ctx) {
             const px = x + (rnd() - 0.5) * 0.25, pz = z + (rnd() - 0.5) * 0.25;
             if (!geo.pointInRing(px, pz, l.r)) continue;
             const e = geo.distToRingEdge(px, pz, l.r);
-            if (e < 0.35 || !outsideOk(px, pz, 0.2)) continue; // mapped beds win over overlapping footways
+            // mapped beds win over overlapping footways, reserved squares and the start line
+            if (e < 0.35 || !ctx.colliders.isFree(px, pz, 0.2)) continue;
             put('flowers', px, pz, rnd, { s: 0.9 + rnd() * 0.3, tint: palette[Math.floor(e / 0.9) % 3], src: 'bed' });
           }
         }

@@ -2,7 +2,7 @@
 // and the little round Temple of Diana (eight grey columns, four round steps, a dome with a pine cone).
 import * as THREE from 'three';
 import { GeoBuilder } from '../../core/util.js';
-import { C, Frame, column, statue, polyShape, opening } from './kit.js';
+import { C, Frame, column, statue, polyShape, opening, photoView } from './kit.js';
 
 export function buildFaustina(ctx) {
   const { colliders, quality } = ctx;
@@ -86,10 +86,11 @@ export function buildDiana(ctx) {
   const f = new Frame(new GeoBuilder(), a.x, a.z, 0, ctx.terrain.heightAt(a.x, a.z));
   const seg = hi ? 24 : 16;
 
-  // little lawn island in the middle of the Piazzale, edged in travertine
-  f.cyl(4.15, 4.15, 0.07, seg, C.travertine, 0, 0, 0);
-  f.cyl(3.85, 3.85, 0.1, seg, C.grass, 0, 0, 0);
-  for (let k = 0; k < 4; k++) f.cyl(3.15 - k * 0.27, 3.15 - k * 0.27, 0.2, seg, k % 2 ? C.travertine : C.travertineShade, 0, k * 0.2, 0);
+  // little lawn island in the middle of the Piazzale, edged in travertine; island and steps stay
+  // compact so the roundabout avenue around them is wide enough to drive
+  f.cyl(3.55, 3.55, 0.07, seg, C.travertine, 0, 0, 0);
+  f.cyl(3.3, 3.3, 0.1, seg, C.grass, 0, 0, 0);
+  [2.9, 2.7, 2.55, 2.4].forEach((r, k) => f.cyl(r, r, 0.2, seg, k % 2 ? C.travertine : C.travertineShade, 0, k * 0.2, 0));
   const floor = 0.8, colH = 3.5, ring = 1.95;
   for (let k = 0; k < 8; k++) {
     const t = (k / 8) * Math.PI * 2 + Math.PI / 8;
@@ -106,7 +107,9 @@ export function buildDiana(ctx) {
   // Diana the huntress on her ancient base inside
   statue(f, 0, floor, 0, 1.75, C.marble, C.travertine, { pose: 'bow', plinthH: 1.0, ry: Math.PI * 0.5 });
 
-  colliders.addCircle(a.x, a.z, 3.25, 'statue');
+  colliders.addCircle(a.x, a.z, 2.75, 'statue');
+  // the postcard from the east: Diana seen between the columns, the cart on the roundabout beside her
+  photoView(ctx, 'diana', { spot: f.w(6.2, 0), face: [0.89, 0.45], cam: [...f.w(16, -3), 5.8], look: [...f.w(3, 0.3), 2.6], far: f.w(0, 0), wide: 4 });
   ctx.reserve({ x: a.x, z: a.z, r: 8.5 });
   const group = new THREE.Group();
   group.name = 'tempio-diana';

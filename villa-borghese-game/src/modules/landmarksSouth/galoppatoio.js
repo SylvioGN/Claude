@@ -13,6 +13,7 @@ const C = {
   door: '#3f6b3e', dark: '#2a2420', hay: '#e2bd5a', hayDark: '#c99d3c', trough: '#8a8f94', water: '#5d9ec8',
   flagRed: '#e8463a', flagBlue: '#3b7fd1', flowers: ['#e8463a', '#f2c14e', '#f6f1e7', '#e05a7a'],
 };
+const FENCE_RUNS = 8;
 const COATS = ['#7a4a2a', '#a35a2e', '#d9d4ca', '#3a302a', '#c99a5a', '#5e3b24', '#efebe2', '#8c5a34'];
 const JACKETS = { pad: '#f4f4f0', saddle: '#4a3020', legs: '#ece6d6', boots: '#1f1f22', jacket: '#24365e', skin: '#e8b996', helmet: '#1c1c20', gloves: '#2a2a2a' };
 
@@ -50,7 +51,7 @@ export function buildGaloppatoio(ctx, gb, decals) {
   const H = T.heightAt;
   const ring = N.r;
   const low = ctx.quality.tier === 'low';
-  const f0 = new Frame(gb);
+  const { GeoBuilder, mats } = ctx.util;
 
   // --- the edge of the riding ground, resampled and gently rounded, with inward normals
   const spacing = low ? 3.4 : 2.8;
@@ -98,9 +99,15 @@ export function buildGaloppatoio(ctx, gb, decals) {
   for (const g of gates) if (g.viale && (!main || g.x > main.x)) main = g;
   const inGate = (i) => gates.some((g) => { const d = (i - g.i + n) % n; return d === 0 || d === n - 1; });
 
+  // The fence is merged in runs along the edge (the stables and the arena are meshes of their
+  // own), so every mesh has a small bounding sphere: the parts far from the cart drop out of the
+  // view and of the shadow map instead of the whole riding ground being drawn from 300 units away.
+  const runs = Array.from({ length: FENCE_RUNS }, () => new Frame(new GeoBuilder()));
+  const runOf = (i) => runs[Math.floor((i * FENCE_RUNS) / n)];
   const postH = 1.3, railY = [0.55, 1.05];
   const py = posts.map(([x, z]) => H(x, z));
   for (let i = 0; i < n; i++) {
+    const f0 = runOf(i);
     const [x, z] = posts[i], y = py[i];
     const gatePost = gates.some((g) => i === (g.i + 1) % n || i === (g.i - 1 + n) % n);
     const t = gatePost ? 0.26 : 0.16, h = postH + (gatePost ? 0.35 : 0);
@@ -114,7 +121,7 @@ export function buildGaloppatoio(ctx, gb, decals) {
     const a = posts[(g.i - 1 + n) % n], b = posts[(g.i + 1) % n];
     const ya = H(a[0], a[1]), yb = H(b[0], b[1]);
     const gw = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    const gf = new Frame(gb, (a[0] + b[0]) / 2, (ya + yb) / 2, (a[1] + b[1]) / 2, Math.atan2(b[0] - a[0], b[1] - a[1]) - Math.PI / 2);
+    const gf = new Frame(runOf(g.i).gb, (a[0] + b[0]) / 2, (ya + yb) / 2, (a[1] + b[1]) / 2, Math.atan2(b[0] - a[0], b[1] - a[1]) - Math.PI / 2);
     // closed double gate: frame, bars and a diagonal brace per leaf
     for (const s of [-1, 1]) {
       const cx = s * gw / 4;
@@ -141,7 +148,12 @@ export function buildGaloppatoio(ctx, gb, decals) {
   buildArena(ctx, gb, arena);
   // --- stables by the east gate
   const stables = placeStables(ctx, ring, main, S, inward);
-  if (stables) buildStables(ctx, gb, stables);
+  const stableGb = new GeoBuilder();
+  if (stables) buildStables(ctx, stableGb, stables);
+  for (const [k, part] of [...runs.map((r) => r.gb), stableGb].entries()) {
+    const mesh = part.build(mats().vcFlat, { name: k < FENCE_RUNS ? 'galoppatoioFence' : 'galoppatoioStables' });
+    if (mesh) ctx.scene.add(mesh);
+  }
   // --- umbrella pines dotted over the sand, keeping clear of the round pen
   const pen = findPen(ctx, ring);
   if (pen) ctx.reserve({ x: pen.x, z: pen.z, r: pen.r + 6 });
@@ -444,9 +456,12 @@ function buildHorses(ctx, S, inward, arena, ring, pen) {
   // one shared bounding sphere over the whole riding ground keeps culling cheap and correct
   const bb = ctx.geo.ringBBox(ring);
   const sphere = new THREE.Sphere(new THREE.Vector3((bb.minX + bb.maxX) / 2, H((bb.minX + bb.maxX) / 2, (bb.minZ + bb.maxZ) / 2), (bb.minZ + bb.maxZ) / 2), Math.hypot(bb.maxX - bb.minX, bb.maxZ - bb.minZ) / 2 + 6);
-  for (const m of [bodies, legs, riders]) {
+  // That sphere would also put every horse in the shadow map wherever the cart is, so they cast
+  // shadows only while one of them is near the cart (see update).
+  const meshes = [bodies, legs, riders];
+  const shadows = (on) => { if (bodies.castShadow !== on) for (const m of meshes) m.castShadow = on; };
+  for (const m of meshes) {
     m.boundingSphere = sphere;
-    m.castShadow = true;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     scene.add(m);
   }
@@ -528,14 +543,16 @@ function buildHorses(ctx, S, inward, arena, ring, pen) {
     // far away: tick less often (the bounding sphere still culls rendering)
     acc += dt;
     const dc = cam.position.distanceTo(sphere.center);
+    if (!force && dc > sphere.radius + 120) shadows(false);
     if (!force && dc > sphere.radius + 260) return;
     if (!force && dc > sphere.radius + 120 && (frameSkip = (frameSkip + 1) % 3)) return;
     const step = Math.min(acc, 0.25);
     acc = 0;
-    let ri = 0;
-    const t = ctx.time;
+    let ri = 0, near = Infinity;
+    const t = ctx.time, c = ctx.cart?.position || cam.position;
     horses.forEach((h, i) => {
       const { m, ph, tuck } = pose(h, step);
+      near = Math.min(near, Math.abs(h.x - c.x) + Math.abs(h.z - c.z));
       bodies.setMatrixAt(i, m);
       if (h.ridden) {
         tmpL.makeTranslation(0, h.gait === 'trot' ? 0.05 * Math.max(0, Math.sin(ph * 2)) * (1 - h.rearA) : 0.02, 0);
@@ -558,9 +575,10 @@ function buildHorses(ctx, S, inward, arena, ring, pen) {
     bodies.instanceMatrix.needsUpdate = true;
     legs.instanceMatrix.needsUpdate = true;
     riders.instanceMatrix.needsUpdate = true;
+    shadows(near < 90);
   }
   update(0, true);
-  return { update, meshes: [bodies, legs, riders], count: nH };
+  return { update, meshes, count: nH };
 }
 
 // The round pen: a closed wall ring well inside the riding ground (from MAP.WALLS).

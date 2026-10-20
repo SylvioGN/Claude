@@ -345,6 +345,19 @@ function stele(gb) {
   gb.place(new THREE.TorusGeometry(0.17, 0.045, 4, 10), C.patina, 0, 1.58, 0.2);
 }
 
+// Small travertine obelisk on a stepped plinth, about 6.3 high.
+export const obelisk = () => cached('obelisk', () => {
+  const gb = new GeoBuilder();
+  gb.box(1.9, 0.4, 1.9, C.travertineShade, 0, 0.0, 0);
+  gb.box(1.5, 0.3, 1.5, C.plinth, 0, 0.35, 0);
+  gb.box(1.0, 1.3, 1.0, C.travertine, 0, 1.15, 0);
+  gb.box(1.2, 0.16, 1.2, C.travertineShade, 0, 1.88, 0);
+  gb.box(0.5, 0.32, 0.03, C.bronze, 0, 1.2, 0.515);
+  pyramid(gb, 0.62, 0.62, 3.8, C.travertine, 0, 3.86, 0, 0.62);
+  pyramid(gb, 0.42, 0.42, 0.5, C.travertineShade, 0, 6.01, 0);
+  return done(gb);
+});
+
 // ---------------------------------------------------------------- kiosks
 
 // Café kiosk: cream cabin, green trim, striped awning over the counter and a giant gelato on the roof.

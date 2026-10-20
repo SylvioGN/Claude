@@ -1,7 +1,7 @@
 // Fortezzuola (Museo Pietro Canonica), Casina dell'Orologio and the Globe Theatre.
 import * as THREE from 'three';
 import { GeoBuilder, buildGeometry, mats } from '../../core/util.js';
-import { C, Frame, opening, merlons, statue, horse, hipRoofGeometry, pyramidGeometry, archRing, polyShape } from './kit.js';
+import { C, Frame, opening, merlons, statue, horse, hipRoofGeometry, pyramidGeometry, archRing, polyShape, photoView } from './kit.js';
 
 const anchorFrame = (ctx, key) => {
   const a = ctx.MAP.ANCHORS[key];
@@ -128,9 +128,8 @@ export function buildFortezzuola(ctx) {
   for (const [u, v] of [[-3.2, 11.0], [-9.5, 11.0], [7.0, 11.0]]) f.box(2.6, 0.7, 0.8, C.hedge, u, 0, v);
 
   colliders.addRing(ctx.MAP.ANCHORS.fortezzuola.footprint, 'building');
-  // core's photo spot lands on the courtyard walk inside the walls: use the walk to the portal
-  const stop = ctx.game?.stops?.find((s) => s.id === 'fortezzuola');
-  if (stop) [stop.spotX, stop.spotZ] = f.w(1.7, 13.4);
+  // the postcard: the cart on the lawn before the portal, the rose castle and its tower behind
+  photoView(ctx, 'fortezzuola', { spot: f.w(2.5, 16.5), face: f.dir(-0.65, 0.76), cam: [...f.w(4.6, 29), 3.6], look: [...f.w(1.5, 5), 4.5], far: f.w(2, 10) });
   for (const [u, v, r] of [[-6.2, 14.2, 1.7], [-1.4, 11.2, 0.5], [4.6, 11.2, 0.5], [-3.2, 11.0, 1.3], [-9.5, 11.0, 1.3], [7.0, 11.0, 1.3]]) {
     const [x, z] = f.w(u, v);
     colliders.addCircle(x, z, r, r > 1 && r < 1.5 ? 'hedge' : 'statue');
@@ -334,6 +333,9 @@ export function buildGlobe(ctx) {
   g.box(3.2, 0.06, 6.5, C.gravel, cu, 0, cv + R + 4.0);
 
   colliders.addRing(a.footprint, 'building');
+  // the postcard: the cart on the walk to the door, the wooden O behind, taken from the gap in
+  // the railings along the footway
+  photoView(ctx, 'globe', { spot: f.w(0.5, 12.8), face: f.dir(-0.59, 0.81), cam: [...f.w(2.2, 24), 4.2], look: [...f.w(0, 3), 4.2], far: f.w(0, 9) });
   ctx.reserve({ x: f.w(cu, cv)[0], z: f.w(cu, cv)[1], r: 15 });
   ctx.reserve({ ring: [f.w(-2.2, 8), f.w(2.2, 8), f.w(2.2, 15.5), f.w(-2.2, 15.5)] });
   const group = new THREE.Group();

@@ -4,6 +4,13 @@ import * as THREE from 'three';
 
 const KIND = { puff: 0, star: 1, leaf: 2 };
 
+// Marks the first n items of a dynamic buffer for upload (not the whole capacity).
+function uploadFirst(attr, n) {
+  attr.clearUpdateRanges();
+  attr.addUpdateRange(0, n * attr.itemSize);
+  attr.needsUpdate = true;
+}
+
 function atlas(util) {
   return util.canvasTexture(192, 64, (g) => {
     g.clearRect(0, 0, 192, 64);
@@ -100,6 +107,12 @@ export function createParticles(ctx, max) {
 
   let count = 0;
   const c = new THREE.Color();
+  const rgbCache = new Map(); // CSS colour -> [r, g, b], converted once
+  const rgbOf = (color) => {
+    let v = rgbCache.get(color);
+    if (!v) { c.set(color); v = [c.r, c.g, c.b]; rgbCache.set(color, v); }
+    return v;
+  };
   const dbs = new THREE.Vector2();
 
   return {
@@ -114,8 +127,8 @@ export function createParticles(ctx, max) {
       life[i] = span[i] = o.life || 1;
       s0[i] = o.size0 ?? 0.5; s1[i] = o.size1 ?? s0[i];
       a0[i] = o.alpha ?? 1;
-      c.set(o.color || '#ffffff');
-      col[i * 4] = c.r; col[i * 4 + 1] = c.g; col[i * 4 + 2] = c.b;
+      const rgb = rgbOf(o.color || '#ffffff');
+      col[i * 4] = rgb[0]; col[i * 4 + 1] = rgb[1]; col[i * 4 + 2] = rgb[2];
       kind[i] = KIND[o.kind || 'puff'];
       grav[i] = o.gravity || 0; drag[i] = o.drag || 0; twinkle[i] = o.twinkle || 0;
     },
@@ -147,36 +160,44 @@ export function createParticles(ctx, max) {
       }
       geo.setDrawRange(0, count);
       if (count) {
-        aPos.needsUpdate = true; aCol.needsUpdate = true; aSize.needsUpdate = true; aKind.needsUpdate = true;
+        uploadFirst(aPos, count); uploadFirst(aCol, count); uploadFirst(aSize, count); uploadFirst(aKind, count);
       }
     },
   };
 }
 
-// Speech bubble above the riders ("Whoa!", "Wheee!", "Ciao!").
+// Speech bubble beside the riders ("Wheee!", "Ciao!"), out on the speaker's side of the cart so the
+// guide arrow above the roof stays in sight. Its tail points back at the cart.
 export function createBubble(ctx, parent) {
+  const W = 256, H = 128, TAIL = 0.16; // tail tip at 16% of the width from the inner edge
   const cache = new Map();
-  const tex = (text) => {
-    if (cache.has(text)) return cache.get(text);
-    const t = ctx.util.canvasTexture(256, 128, (g, w, h) => {
+  const tex = (text, tailLeft) => {
+    const key = (tailLeft ? 'L' : 'R') + text;
+    if (cache.has(key)) return cache.get(key);
+    const t = ctx.util.canvasTexture(W, H, (g, w, h) => {
       g.clearRect(0, 0, w, h);
       g.fillStyle = '#ffffff';
       g.strokeStyle = '#2a2118';
       g.lineWidth = 6;
-      ctx.util.roundRect(g, 10, 8, w - 20, 84, 36);
+      ctx.util.roundRect(g, 8, 8, w - 16, 84, 36);
       g.fill(); g.stroke();
+      // tail from the bottom edge down to the tip, mirrored for the other side
+      const tip = tailLeft ? w * TAIL : w * (1 - TAIL), base = tailLeft ? 1 : -1;
+      const b0 = tip + base * 12, b1 = tip + base * 44;
       g.beginPath();
-      g.moveTo(w / 2 - 22, 89); g.lineTo(w / 2 - 6, 120); g.lineTo(w / 2 + 14, 89);
+      g.moveTo(b0, 89); g.lineTo(tip, h - 6); g.lineTo(b1, 89);
       g.closePath(); g.fill();
       g.beginPath();
-      g.moveTo(w / 2 - 22, 92); g.lineTo(w / 2 - 6, 120); g.lineTo(w / 2 + 14, 92);
+      g.moveTo(b0, 92); g.lineTo(tip, h - 6); g.lineTo(b1, 92);
       g.stroke();
       g.font = '900 52px system-ui, sans-serif';
+      const fit = Math.min(1, (w - 52) / Math.max(1, g.measureText(text).width));
+      g.font = `900 ${Math.floor(52 * fit)}px system-ui, sans-serif`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillStyle = '#e8572e';
-      g.fillText(text, w / 2, 52);
+      g.fillText(text, w / 2, 51);
     }, { wrap: false });
-    cache.set(text, t);
+    cache.set(key, t);
     return t;
   };
   const mat = new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false, fog: false });
@@ -185,13 +206,22 @@ export function createBubble(ctx, parent) {
   sprite.renderOrder = 20;
   sprite.center.set(0.5, 0);
   parent.add(sprite);
-  let left = 0, total = 0, cool = 0;
+  const sideW = new THREE.Vector3(), camRight = new THREE.Vector3();
+  let left = 0, total = 0, cool = 0, y0 = 1.7;
   return {
-    say(text, x, z, dur = 1.4) {
+    // side: -1 | 1, the cart side (local x) of the rider who speaks; z: the rider's row
+    say(text, side, z, dur = 1.4) {
       if (cool > 0) return false;
-      mat.map = tex(text);
+      // which way is "outwards" on screen: the tail goes on the inner edge, towards the cart
+      parent.updateMatrixWorld();
+      sideW.set(side, 0, 0).transformDirection(parent.matrixWorld);
+      camRight.setFromMatrixColumn(ctx.camera.matrixWorld, 0);
+      const outRight = sideW.dot(camRight) >= 0;
+      mat.map = tex(text, outRight);
       mat.needsUpdate = true;
-      sprite.position.set(x, 2.25, z);
+      sprite.center.set(outRight ? TAIL : 1 - TAIL, 0);
+      y0 = 1.7;
+      sprite.position.set(side * 0.95, y0, z);
       left = total = dur;
       cool = dur + 0.6;
       sprite.visible = true;
@@ -204,9 +234,9 @@ export function createBubble(ctx, parent) {
       const u = 1 - left / total;
       const pop = u < 0.15 ? 0.6 + (u / 0.15) * 0.5 : u < 0.25 ? 1.1 - ((u - 0.15) / 0.1) * 0.1 : 1;
       const fade = left < 0.25 ? left / 0.25 : 1;
-      sprite.scale.set(2.4 * pop, 1.2 * pop, 1);
+      sprite.scale.set(2.8 * pop, 1.4 * pop, 1);
       mat.opacity = fade;
-      sprite.position.y = 2.25 + u * 0.25;
+      sprite.position.y = y0 + u * 0.2;
     },
   };
 }

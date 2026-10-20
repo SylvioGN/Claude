@@ -1,14 +1,16 @@
 // Guide: helps a six-year-old find the next place to visit, and celebrates arriving.
 //  * beacons: a soft pillar of light and a pulsing ground ring at every stop still to visit (the
 //    next one gold and bigger), with a floating picture badge; visited stops get a green flag + tick
-//  * route: golden dots flowing along the avenues to the next stop (A* on the path network)
+//  * route: golden dots flowing along the avenues to the next stop (A* on the path network), with
+//    rounded corners, bent round statues, lamps and roadworks so the dots never lead into them
 //  * arrow: a chunky 3D arrow above the cart roof pointing the way
 //  * celebrations: confetti and sparkles on arrival, more for a medal, fireworks for the whole tour
 // Draw calls: pillars+rings 1, badges 2, flags 1, dots 1, arrow 1, confetti 1, sparks 1.
 import * as THREE from 'three';
-import { buildRouteGraph, findRoute } from './guide/route.js';
+import { buildRouteGraph, findRoute, roundCorners, clearRoute } from './guide/route.js';
 import { ICONS, ATLAS_GRID, drawAtlas } from './guide/icons.js';
 import { createEffects } from './guide/effects.js';
+import { SURF } from '../core/terrain.js';
 
 const GOLD = new THREE.Color('#ffb21f');
 const SOFT = new THREE.Color('#8fd8ff');
@@ -229,7 +231,8 @@ export async function create(ctx) {
   const N = stops.length;
 
   // ---------------------------------------------------------------- route graph
-  // A straight hop across the grass is blocked by walls, fences, water, buildings and the park edge.
+  // A straight line (a hop across the grass, or a stretch of avenue in the graph) is blocked by
+  // walls, fences, water, buildings, big basins and the park edge.
   function blocked(ax, az, bx, bz) {
     const mx = (ax + bx) / 2, mz = (az + bz) / 2, r = Math.hypot(bx - ax, bz - az) / 2;
     let hit = false;
@@ -244,6 +247,29 @@ export async function create(ctx) {
     return hit;
   }
   const graph = buildRouteGraph(MAP.PATHS, { isInside: T.isInside, plazas: MAP.PLAZAS, blocked });
+
+  // The golden line: avenue route with rounded corners, kept clear of statues, lamps and roadworks.
+  let shapeOut = null;
+  const collectShape = (s) => { shapeOut.push(s); };
+  const shape = {
+    shapes(x, z, r, out) { shapeOut = out; colliders.query(x, z, r, collectShape); },
+    ok(ax, az, bx, bz) {
+      if (T.isInside(ax, az) && !T.isInside(bx, bz)) return false;
+      if (T.surfaceAt(bx, bz) === SURF.WATER) return false;
+      // no jumping over a wall (unless the avenue already runs into it: then any way out is good)
+      let crosses = false;
+      colliders.query((ax + bx) / 2, (az + bz) / 2, Math.hypot(bx - ax, bz - az) / 2 + 0.5, (s) => {
+        if (crosses || s.type !== 1 || ctx.geo.segDist2(ax, az, s.ax, s.az, s.bx, s.bz) < (s.pad + 0.3) ** 2) return;
+        crosses = segmentsCross(ax, az, bx, bz, s.ax, s.az, s.bx, s.bz);
+      });
+      return !crosses;
+    },
+  };
+  const shapeRoute = (pts) => clearRoute(roundCorners(pts), shape);
+  function goldenRoute(ax, az, bx, bz) {
+    const pts = findRoute(graph, ax, az, bx, bz, blocked);
+    return pts && shapeRoute(pts);
+  }
 
   // ---------------------------------------------------------------- beacons
   const beaconMat = new THREE.ShaderMaterial({
@@ -318,6 +344,7 @@ export async function create(ctx) {
   dots.renderOrder = 3;
   dots.count = 0;
   scene.add(dots);
+  const dotAttrs = [dots.instanceMatrix, dotTint];
 
   // ---------------------------------------------------------------- arrow
   const arrow = new THREE.Group();
@@ -344,22 +371,33 @@ export async function create(ctx) {
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
     return { pts, cum, len: cum[cum.length - 1], stop };
   }
-  function plan(stop) {
+  // raw: the avenue route from findRoute when it is already known (shaping it is the costly part)
+  function plan(stop, raw = null) {
     const p = ctx.cart.position;
-    const pts = findRoute(graph, p.x, p.z, stop.spotX, stop.spotZ, blocked) || [[p.x, p.z], [stop.spotX, stop.spotZ]];
-    return makeRoute(pts, stop);
+    raw ||= findRoute(graph, p.x, p.z, stop.spotX, stop.spotZ, blocked);
+    return makeRoute(raw ? shapeRoute(raw) : [[p.x, p.z], [stop.spotX, stop.spotZ]], stop);
   }
-  // Where the cart is along the route: arc length and distance off it.
+  function lengthOf(pts) {
+    let L = 0;
+    for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    return L;
+  }
+  // Where the cart is along the route: arc length and distance off it (written to `proj`).
+  const proj = { s: 0, d: 0 };
   function project(r, x, z) {
     let best = Infinity, bd2 = 0, bs = 0, bi = 1;
     for (let i = 1; i < r.pts.length; i++) {
-      const c = ctx.geo.closestOnSegment(x, z, r.pts[i - 1][0], r.pts[i - 1][1], r.pts[i][0], r.pts[i][1]);
+      const ax = r.pts[i - 1][0], az = r.pts[i - 1][1], dx = r.pts[i][0] - ax, dz = r.pts[i][1] - az;
+      const L2 = dx * dx + dz * dz;
+      const t = L2 > 0 ? Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / L2)) : 0;
+      const ex = ax + dx * t - x, ez = az + dz * t - z, d2 = ex * ex + ez * ez;
       // prefer the stretch we were on when the route doubles back near itself
-      const score = c.d2 + (i < lastSeg ? 4 : 0);
-      if (score < best) { best = score; bd2 = c.d2; bi = i; bs = r.cum[i - 1] + (r.cum[i] - r.cum[i - 1]) * c.t; }
+      const score = d2 + (i < lastSeg ? 4 : 0);
+      if (score < best) { best = score; bd2 = d2; bi = i; bs = r.cum[i - 1] + (r.cum[i] - r.cum[i - 1]) * t; }
     }
     lastSeg = bi;
-    return { s: bs, d: Math.sqrt(bd2) };
+    proj.s = bs; proj.d = Math.sqrt(bd2);
+    return proj;
   }
   // Point at arc length s, written to `at` ({x, z, seg}); `from` = segment to start searching at.
   const at = { x: 0, z: 0, seg: 1 };
@@ -387,10 +425,9 @@ export async function create(ctx) {
     const moving = Math.abs(ctx.cart.speed || 0) > 0.3;
     if (moving && ((pr.d > OFF_ROUTE && replanIn < REPLAN_EVERY - 0.25) || replanIn <= 0)) {
       // take the fresh route when the cart left the old one, or when it is clearly shorter
-      const cand = plan(next);
-      const remaining = route.len - pr.s + pr.d;
-      if (pr.d > OFF_ROUTE || cand.len < remaining - 4) {
-        route = cand;
+      const raw = pr.d > OFF_ROUTE ? null : findRoute(graph, p.x, p.z, next.spotX, next.spotZ, blocked);
+      if (pr.d > OFF_ROUTE || (raw && lengthOf(raw) < route.len - pr.s + pr.d - 4)) {
+        route = plan(next, raw);
         lastSeg = 0;
         pr = project(route, p.x, p.z);
       }
@@ -425,8 +462,11 @@ export async function create(ctx) {
     }
     dots.count = n;
     dots.visible = n > 0;
-    dots.instanceMatrix.needsUpdate = true;
-    dotTint.needsUpdate = true;
+    for (const attr of dotAttrs) {
+      attr.clearUpdateRanges();
+      attr.addUpdateRange(0, n * attr.itemSize);
+      attr.needsUpdate = true;
+    }
   }
 
   function updateArrow(dt, t, next, want) {
@@ -554,7 +594,7 @@ export async function create(ctx) {
     graph,
     // the route being shown: {pts: [[x, z]...] from the cart to the stop, cum, len, stop} or null
     get route() { return route; },
-    findRoute: (ax, az, bx, bz) => findRoute(graph, ax, az, bx, bz, blocked),
+    findRoute: goldenRoute,
     effects: fx,
     update(dt, t) {
       const state = game.state;

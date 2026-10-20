@@ -69,7 +69,9 @@ export function createPeople(env) {
       x: 0, z: 0, y: 0, h: 0, tx: 0, tz: 0, phase: rnd() * 6.28, raiseR: 0, raiseL: 0,
       leader: null, offFwd: 0, offSide: 0,
       react: null, ox: 0, oz: 0, pvx: 0, pvz: 0, hop: 0, spin: 0, rx: 0, rz: 0, glow: 0,
-      cool: 0, pause: 0, dodged: false, lookH: null, fade: 0, active: false, static: false, kickT: 0,
+      cool: 0, pause: 0, dodged: false, lookH: NaN, fade: 0, active: false, static: false, kickT: 0,
+      // every field starts with a value of its final type, so V8 keeps the numbers unboxed
+      x0: 0, z0: 0, h0: 0, holdL: 0, solid: false, seller: false,
       ...opts,
     };
     agents.push(a);
@@ -302,8 +304,8 @@ export function createPeople(env) {
     a.x += (a.tx - a.x) * k; a.z += (a.tz - a.z) * k;
     const mvx = a.x - px, mvz = a.z - pz;
     let wantH = a.h;
-    if (a.lookH !== null && a.react?.type === 'wave') wantH = a.lookH;
-    else if (a.static) wantH = a.h0 ?? a.h;
+    if (!Number.isNaN(a.lookH) && a.react?.type === 'wave') wantH = a.lookH;
+    else if (a.static) wantH = a.h0;
     else if (mvx * mvx + mvz * mvz > 1e-6 * dt) wantH = Math.atan2(mvx, mvz);
     a.h = angleLerp(a.h, wantH, Math.min(1, dt * 6));
     const gx = a.x + a.ox, gz = a.z + a.oz;
@@ -350,7 +352,7 @@ export function createPeople(env) {
         if (a.kind === 'risciò') raiseL = 2.5 + Math.sin(t * 13 + 1) * 0.4;
         if (a.kind === 'dog') a.hop = Math.abs(Math.sin(r.t * 7)) * 0.25 * (1 - f);
       }
-      if (r.t >= r.dur) { a.react = null; a.lookH = null; a.dodged = false; }
+      if (r.t >= r.dur) { a.react = null; a.lookH = NaN; a.dodged = false; }
     }
     if (a.kickT > 0) a.kickT -= dt;
     a.raiseR = raiseR; a.raiseL = raiseL || a.holdL || 0;
@@ -381,6 +383,7 @@ export function createPeople(env) {
     }
   }
 
+  const _anim = [0, 0, 0, 0]; // per-instance animation values, copied by Crowd.push
   function render(a, t) {
     const s = a.s * (a.fade < 1 ? 0.2 + 0.8 * a.fade : 1);
     const gx = a.x + a.ox, gz = a.z + a.oz;
@@ -392,7 +395,8 @@ export function createPeople(env) {
     if (a.kind === 'jogger') { rx += 0.1; y += Math.abs(Math.cos(a.phase)) * 0.07; }
     if (isPerson(a) && a.speed > 0.2) y += Math.abs(Math.cos(a.phase)) * 0.03;
     if (a.kind === 'horse') y += Math.abs(Math.sin(a.phase)) * 0.04;
-    a.crowd.push(gx, y, gz, a.h + a.spin, s, a.pal, [phase, swing, a.raiseR, a.raiseL], a.glow, rx, rz);
+    _anim[0] = phase; _anim[1] = swing; _anim[2] = a.raiseR; _anim[3] = a.raiseL;
+    a.crowd.push(gx, y, gz, a.h + a.spin, s, a.pal, _anim, a.glow, rx, rz);
     const sr = a.kind === 'horse' ? 1.5 : a.kind === 'risciò' ? 1.5 : a.kind === 'cyclist' ? 0.8 : a.kind === 'dog' ? 0.45 * a.s : 0.5 * a.s;
     fx.shadow(gx, a.y, gz, sr * (1 - Math.min(0.5, a.hop * 0.4)));
     if (a.kind === 'dog' && a.leader && a.leader.active) {

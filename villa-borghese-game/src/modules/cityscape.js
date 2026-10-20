@@ -3,7 +3,8 @@
 //     railings, hedges) with colliders
 //   * the real city blocks around the park from OpenStreetMap, streets with a little traffic,
 //     Viale del Muro Torto in its cutting
-//   * Piazza del Popolo below the Pincio terrace, Villa Medici, GNAM, Trinità dei Monti
+//   * Piazza del Popolo below the Pincio terrace, Villa Medici, Trinità dei Monti (the GNAM and the
+//     Pincio's retaining walls and Dea Roma fountain belong to the landmark modules)
 //   * a hazy skyline beyond the fog: St Peter's dome, the Vittoriano, domes, Monte Mario, Gianicolo
 // Everything shares one canvas atlas and material (cityscape/atlas.js), merged per spatial chunk.
 import * as THREE from 'three';
@@ -17,7 +18,8 @@ import { buildSkyline } from './cityscape/skyline.js';
 import { buildTraffic } from './cityscape/traffic.js';
 import { plantCityTrees } from './cityscape/trees.js';
 
-const CHUNK = 240;
+// Chunk sizes: the city is cut finer so the frustum and fog culling drop more of it.
+const PARK_CHUNK = 240, CITY_CHUNK = 120;
 
 export async function create(ctx) {
   const { scene, MAP } = ctx;
@@ -25,7 +27,9 @@ export async function create(ctx) {
   const root = new THREE.Group();
   root.name = 'cityscape';
   scene.add(root);
-  const chunks = new Chunks(CHUNK);
+  // Buildings and walls of the park cast shadows; the city outside the walls does not (its shadows
+  // hardly ever reach the avenues, and the shadow pass is a big share of a phone's frame).
+  const park = new Chunks(PARK_CHUNK), city = new Chunks(CITY_CHUNK);
   const stats = {};
 
   // Footprints that would sit on a landmark or on the Muro Torto road are left out.
@@ -37,16 +41,17 @@ export async function create(ctx) {
     || anchorPoints.some((a) => Math.hypot(a.x - x, a.z - z) < 4)
     || nearMuro(x, z, 9);
 
-  stats.park = buildParkBuildings(ctx, chunks, skipPark);
+  stats.park = buildParkBuildings(ctx, park, skipPark);
   const rails = new RailBuilder();
-  stats.walls = buildWalls(ctx, chunks, rails);
+  stats.walls = buildWalls(ctx, park, rails);
   const specials = [], rings = [];
-  stats.city = buildCity(ctx, chunks, { specials, rings });
-  buildPopolo(ctx, chunks);
-  buildLandmarks(ctx, chunks, specials);
+  stats.city = buildCity(ctx, city, { specials, rings });
+  buildPopolo(ctx, city);
+  buildLandmarks(ctx, city, specials);
   stats.trees = plantCityTrees(ctx, rings);
 
-  stats.tris = chunks.buildInto(root, mats.city, { name: 'city' });
+  stats.tris = park.buildInto(root, mats.city, { name: 'park' })
+    + city.buildInto(root, mats.city, { name: 'city', castShadow: false });
   const railMesh = rails.build(mats.rail);
   if (railMesh) root.add(railMesh);
 

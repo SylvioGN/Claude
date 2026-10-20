@@ -1,9 +1,10 @@
 // Terrazza del Pincio: the balustrade along the edge of the hill over Piazza del Popolo, Valadier's
-// terraced retaining walls below it, and in the middle the loggia with the Fontana della Dea di
-// Roma, the two rostral columns and statues. The Leone del Pincio sits on the lower terrace.
+// terraced retaining walls below it, in the middle the loggia with the two rostral columns and
+// statues, his ramps zig-zagging up the bank to the south, and at the foot of the hill the Fontana
+// della Dea Roma in the piazza's east exedra. The Leone del Pincio sits on the lower terrace.
 import * as THREE from 'three';
-import { COL, balustrade, lampPost, urn, statue, local, resample, offsetPolyline, alongY, faceY, archOutline, archRing } from './kit.js';
-import { closestOnPolyline } from '../../core/geo.js';
+import { COL, TexBuilder, balustrade, lampPost, urn, statue, local, resample, offsetPolyline, alongY, faceY, archOutline, archRing } from './kit.js';
+import { closestOnPolyline, segDist2 } from '../../core/geo.js';
 
 // Offsets from the park boundary, outwards (negative = inside the drivable area).
 const RAIL = -0.55;   // main balustrade
@@ -62,6 +63,10 @@ export function buildTerrace(ctx, tb) {
   // The terraced walls exist where the hill really drops, away from the Aurelian wall corner.
   const tiered = line.map((p, i) => drop[i] > 2 && p[1] > 66);
 
+  // Everything down the slope goes into its own mesh that casts no shadows: they would only fall
+  // on the bank below, which the drivable area never sees, and keep the shadow pass light here at
+  // the start of the game.
+  const slope = new TexBuilder();
   const wallTop = (pts, ys, i, j) => [[pts[i][0], ys[i], pts[i][1]], [pts[j][0], ys[j], pts[j][1]]];
   for (let i = 0; i < line.length - 1; i++) {
     if (!tiered[i] || !tiered[i + 1]) continue;
@@ -70,17 +75,17 @@ export function buildTerrace(ctx, tb) {
     const ux = (line[j][0] - line[i][0]) / L, uz = (line[j][1] - line[i][1]) / L, nx = -uz, nz = ux;
     const ry = alongY(ux, uz), out = [nx, 0, nz];
     // ledge top (planted bed), its front wall, the lower terrace top and its front wall
-    tb.poly([[pA0[i][0], yA[i], pA0[i][1]], [pA0[j][0], yA[j], pA0[j][1]], [pA1[j][0], yA[j], pA1[j][1]], [pA1[i][0], yA[i], pA1[i][1]]], COL.bed, [0, 1, 0]);
+    slope.poly([[pA0[i][0], yA[i], pA0[i][1]], [pA0[j][0], yA[j], pA0[j][1]], [pA1[j][0], yA[j], pA1[j][1]], [pA1[i][0], yA[i], pA1[i][1]]], COL.bed, [0, 1, 0]);
     const [a0, a1] = wallTop(pA1, yA, i, j);
-    tb.poly([a0, a1, [a1[0], yB[j], a1[2]], [a0[0], yB[i], a0[2]]], COL.wall, out);
-    tb.poly([[pA1[i][0], yB[i], pA1[i][1]], [pA1[j][0], yB[j], pA1[j][1]], [pB1[j][0], yB[j], pB1[j][1]], [pB1[i][0], yB[i], pB1[i][1]]], COL.gravel, [0, 1, 0]);
+    slope.poly([a0, a1, [a1[0], yB[j], a1[2]], [a0[0], yB[i], a0[2]]], COL.wall, out);
+    slope.poly([[pA1[i][0], yB[i], pA1[i][1]], [pA1[j][0], yB[j], pA1[j][1]], [pB1[j][0], yB[j], pB1[j][1]], [pB1[i][0], yB[i], pB1[i][1]]], COL.gravel, [0, 1, 0]);
     const [b0, b1] = wallTop(pB1, yB, i, j);
-    tb.poly([b0, b1, [b1[0], yBot[j], b1[2]], [b0[0], yBot[i], b0[2]]], COL.wall, out);
+    slope.poly([b0, b1, [b1[0], yBot[j], b1[2]], [b0[0], yBot[i], b0[2]]], COL.wall, out);
 
     // cornices along both wall tops (a box along offset line p, pushed d further out)
     const seg = (p, d, h, y, color, w = 0.32) => {
       const len = Math.hypot(p[j][0] - p[i][0], p[j][1] - p[i][1]);
-      tb.box(len + 0.06, h, w, color, (p[i][0] + p[j][0]) / 2 + nx * d, y, (p[i][1] + p[j][1]) / 2 + nz * d, ry);
+      slope.box(len + 0.06, h, w, color, (p[i][0] + p[j][0]) / 2 + nx * d, y, (p[i][1] + p[j][1]) / 2 + nz * d, ry);
     };
     seg(pA1, 0.05, 0.22, (yA[i] + yA[j]) / 2 - 0.12, COL.trim);
     seg(pA1, 0.0, 0.5, (yA[i] + yA[j]) / 2 - 0.25, COL.travertine, 0.42);
@@ -93,12 +98,12 @@ export function buildTerrace(ctx, tb) {
     }
     // planted bed: low clipped hedge with flowers
     const hx = (pA0[i][0] + pA1[i][0] + pA0[j][0] + pA1[j][0]) / 4, hz = (pA0[i][1] + pA1[i][1] + pA0[j][1] + pA1[j][1]) / 4;
-    tb.box(L + 0.1, 0.5, 1.3, COL.bedHedge, hx, (yA[i] + yA[j]) / 2 + 0.25, hz, ry);
+    slope.box(L + 0.1, 0.5, 1.3, COL.bedHedge, hx, (yA[i] + yA[j]) / 2 + 0.25, hz, ry);
     if (quality.tier !== 'low') {
       for (let k = 0; k < 3; k++) {
         const t = (rnd() - 0.5) * L, s = rnd() - 0.5;
         const fx = hx + ux * t + nx * s, fz = hz + uz * t + nz * s;
-        tb.place(new THREE.OctahedronGeometry(0.16, 0), rnd.pick([COL.flowerPink, COL.flowerRed, COL.flowerWhite, COL.flowerViolet]), fx, (yA[i] + yA[j]) / 2 + 0.55, fz);
+        slope.place(new THREE.OctahedronGeometry(0.16, 0), rnd.pick([COL.flowerPink, COL.flowerRed, COL.flowerWhite, COL.flowerViolet]), fx, (yA[i] + yA[j]) / 2 + 0.55, fz);
       }
     }
   }
@@ -110,8 +115,8 @@ export function buildTerrace(ctx, tb) {
     const k = startCap ? i + 1 : i - 1;
     if (k < 0 || k >= line.length) continue;
     const out = [line[i][0] - line[k][0], 0, line[i][1] - line[k][1]];
-    tb.poly([[pA0[i][0], yA[i], pA0[i][1]], [pA1[i][0], yA[i], pA1[i][1]], [pA1[i][0], yBot[i], pA1[i][1]], [pA0[i][0], yBot[i], pA0[i][1]]], COL.wall, out);
-    tb.poly([[pA1[i][0], yB[i], pA1[i][1]], [pB1[i][0], yB[i], pB1[i][1]], [pB1[i][0], yBot[i], pB1[i][1]], [pA1[i][0], yBot[i], pA1[i][1]]], COL.wall, out);
+    slope.poly([[pA0[i][0], yA[i], pA0[i][1]], [pA1[i][0], yA[i], pA1[i][1]], [pA1[i][0], yBot[i], pA1[i][1]], [pA0[i][0], yBot[i], pA0[i][1]]], COL.wall, out);
+    slope.poly([[pA1[i][0], yB[i], pA1[i][1]], [pB1[i][0], yB[i], pB1[i][1]], [pB1[i][0], yBot[i], pB1[i][1]], [pA1[i][0], yBot[i], pA1[i][1]]], COL.wall, out);
   }
 
   // Pilasters and blind arched niches along the lower wall, cypresses on the lower terrace.
@@ -124,14 +129,14 @@ export function buildTerrace(ctx, tb) {
     const [px, pz] = pB1[i];
     const foot = H(px + nx * 1.2, pz + nz * 1.2);
     if (i % 3 === 0) {
-      tb.box(0.75, yB[i] - yBot[i], 0.3, COL.trim, px + nx * 0.12, (yB[i] + yBot[i]) / 2, pz + nz * 0.12, ry);
+      slope.box(0.75, yB[i] - yBot[i], 0.3, COL.trim, px + nx * 0.12, (yB[i] + yBot[i]) / 2, pz + nz * 0.12, ry);
     } else if (i % 3 === 1 && yB[i] - foot > 5) {
-      tb.place(new THREE.ShapeGeometry(archShape, 6), COL.recess, px + nx * 0.03 + ux * 1.0, foot + 0.3, pz + nz * 0.03 + uz * 1.0, 0, faceY(nx, nz), 0);
+      slope.place(new THREE.ShapeGeometry(archShape, 6), COL.recess, px + nx * 0.03 + ux * 1.0, foot + 0.3, pz + nz * 0.03 + uz * 1.0, 0, faceY(nx, nz), 0);
     }
     if (i % 3 === 2 && yB[i] - foot > 4) {
       const [cx, cz] = offsetPoint(line, i, 5.0 + (rnd() - 0.5));
-      if (i % 2) cypress(tb, cx, yB[i], cz, 0.85 + rnd() * 0.3);
-      else roundTree(tb, cx, yB[i], cz, 0.9 + rnd() * 0.3, rnd);
+      if (i % 2) cypress(slope, cx, yB[i], cz, 0.85 + rnd() * 0.3);
+      else roundTree(slope, cx, yB[i], cz, 0.9 + rnd() * 0.3, rnd);
     }
   }
 
@@ -151,6 +156,8 @@ export function buildTerrace(ctx, tb) {
   }
 
   buildLoggia(ctx, tb, C, H);
+  buildDeaRoma(ctx, slope, C);
+  buildRamps(ctx, slope, C);
 
   // Coin-operated telescopes at the best spot of the view, one each side of the axis.
   for (const s of [-5.5, 5.5]) {
@@ -166,10 +173,10 @@ export function buildTerrace(ctx, tb) {
     const c = closestOnPolyline(lionPoi.x, lionPoi.z, line);
     const nx = -c.dirZ, nz = c.dirX;
     const i = Math.min(line.length - 1, Math.max(0, Math.round(c.seg + c.t)));
-    lion(tb, c.x + nx * 5.4, yB[i], c.z + nz * 5.4, faceY(nx, nz));
+    lion(slope, c.x + nx * 5.4, yB[i], c.z + nz * 5.4, faceY(nx, nz));
   }
 
-  return { rail, centre: C };
+  return { rail, centre: C, slope };
 }
 
 function offsetPoint(line, i, d) {
@@ -201,8 +208,8 @@ function roundTree(tb, x, y, z, s, rnd) {
   tb.sphere(0.85 * s, 0, '#4b6e3b', x + (rnd() - 0.5) * s, y + 3.1 * s, z + (rnd() - 0.5) * s);
 }
 
-// The loggia block in the middle of the terraces: Fontana della Dea di Roma at the bottom,
-// three arches above, a balustraded platform on top with the rostral columns and statues.
+// The loggia block in the middle of the terraces: a great arch at the bottom, three arches above,
+// a balustraded platform on top with the rostral columns and statues.
 function buildLoggia(ctx, tb, C, H) {
   const n = [C.nx, C.nz], d = [C.dx, C.dz];
   const P = (s, o) => [C.x + d[0] * s + n[0] * o, C.z + d[1] * s + n[1] * o];
@@ -230,24 +237,12 @@ function buildLoggia(ctx, tb, C, H) {
   // rusticated ground storey: horizontal bands
   for (let y = base + 0.8; y < base + 4.0; y += 0.85) tb.box(W - 0.2, 0.12, 0.12, COL.wallShade, ...xz(fr(0.04), y), ry);
 
-  // Dea Roma niche with archivolt, statue, the river gods and the basin.
+  // the great central arch under the SPQR plaque (the Fontana della Dea Roma itself stands in
+  // front of the exedra on the piazza, built with Piazza del Popolo by cityscape)
   const niche = fr(0.03);
-  tb.place(new THREE.ShapeGeometry(archOutline(3.1, 3.8), 8), COL.recessBlue, niche[0], base + 0.3, niche[1], 0, ry, 0);
+  tb.place(new THREE.ShapeGeometry(archOutline(3.1, 3.8), 8), COL.recess, niche[0], base + 0.3, niche[1], 0, ry, 0);
   tb.extrude(archRing(3.1, 3.8, 0.32), 0.25, COL.trim, niche[0], base + 0.3, niche[1], 0, ry, 0);
-  const st = fr(0.5);
-  statue(tb, st[0], base, st[1], ry, { s: 1.15, pedestal: 1.2, helmet: true, spear: true, color: COL.marble });
   tb.decal('signSpqr', 3.4, 0.58, ...xz(fr(0.08), base + 4.45), ry);
-  const basin = fr(0.0);
-  tb.place(new THREE.CylinderGeometry(3.5, 3.6, 0.85, 14, 1, true, ry - Math.PI / 2, Math.PI), COL.travertine, basin[0], base + 0.42, basin[1]);
-  tb.place(new THREE.RingGeometry(3.2, 3.55, 14, 1, 0, Math.PI), COL.trim, basin[0], base + 0.86, basin[1], -Math.PI / 2, 0, ry + Math.PI);
-  tb.place(new THREE.CircleGeometry(3.25, 14, 0, Math.PI), COL.water, basin[0], base + 0.68, basin[1], -Math.PI / 2, 0, ry + Math.PI);
-  // water spilling from the niche into the basin
-  tb.box(1.0, 1.9, 0.06, '#cfe8f5', ...xz(fr(0.35), base + 1.6), ry);
-  for (const s of [-1, 1]) {
-    const g = fr(1.1, s * 4.9);
-    tb.box(3.2, 0.9, 1.5, COL.travertine, g[0], base + 0.45, g[1], ry);
-    riverGod(tb, g[0], base + 0.9, g[1], ry, s);
-  }
 
   // loggia: three arches between paired columns
   const lb = base + 5.45, lh = top - 0.6 - lb;
@@ -282,6 +277,142 @@ function buildLoggia(ctx, tb, C, H) {
 
 const xz = (p, y) => [p[0], y, p[1]];
 
+// Fontana della Dea Roma at the foot of the hill, against the east exedra of Piazza del Popolo
+// (cityscape builds the piazza), on the axis from the obelisk to the loggia: helmeted Roma with
+// her spear between the reclining Tiber and Aniene, the she-wolf with the twins at her feet, a
+// half-round basin towards the piazza.
+function buildDeaRoma(ctx, tb, C) {
+  const piazza = ctx.MAP.BACKDROP.piazzaPopolo;
+  if (!piazza) return;
+  const [ox, oz] = piazza.center;
+  const L0 = Math.hypot(C.x - ox, C.z - oz), ax = (C.x - ox) / L0, az = (C.z - oz) / L0;
+  const x = ox + ax * (piazza.radius + 1.1), z = oz + az * (piazza.radius + 1.1);
+  const ry = faceY(-ax, -az);
+  const H = ctx.terrain.heightAt;
+  const L = local(x, 0, z, ry);
+  const at = (lx, lz) => { const p = L(lx, 0, lz); return [p[0], p[2]]; };
+  const y = Math.min(H(...at(0, 0)), H(...at(-4, 4)), H(...at(4, 4))) - 0.05;
+  const Y = (lx, ly, lz) => { const p = L(lx, ly, lz); p[1] += y; return p; };
+
+  // backdrop: a pedimented screen with pilasters and an arched niche, above the exedra wall
+  tb.box(10, 6.2, 0.9, COL.wall, ...Y(0, 3.1, -0.3), ry);
+  for (const s of [-1, 1]) tb.box(0.75, 6.2, 1.1, COL.trim, ...Y(s * 4.65, 3.1, -0.2), ry);
+  tb.box(10.6, 0.4, 1.3, COL.trim, ...Y(0, 6.35, -0.2), ry);
+  const half = 5.3, ped = 1.5, rake = Math.hypot(half, ped), pitch = Math.atan2(ped, half);
+  tb.extrude(new THREE.Shape([new THREE.Vector2(-half, 0), new THREE.Vector2(half, 0), new THREE.Vector2(0, ped)]), 0.8, COL.wall, ...Y(0, 6.55, -0.6), 0, ry, 0);
+  for (const s of [-1, 1]) tb.orient(new THREE.BoxGeometry(rake + 0.3, 0.25, 1.0), COL.trim, ...Y(s * half / 2, 6.6 + ped / 2, -0.2), ry, 0, -s * pitch);
+  tb.place(new THREE.ShapeGeometry(archOutline(3.4, 4.9), 8), COL.recessBlue, ...Y(0, 0.9, 0.16), 0, ry, 0);
+  tb.extrude(archRing(3.4, 4.9, 0.3), 0.22, COL.trim, ...Y(0, 0.9, 0.12), 0, ry, 0);
+  tb.decal('signSpqr', 3.0, 0.5, ...Y(0, 6.0, 0.47), ry);
+
+  // rocks, Roma on her pedestal, the river gods on their plinths, the she-wolf
+  const rnd = ctx.rng('pincio-dearoma');
+  for (let k = 0; k < 7; k++) {
+    const a = (k / 7) * Math.PI - Math.PI, r = 1.1 + rnd() * 0.6;
+    tb.sphere(0.6 + rnd() * 0.35, 0, k % 2 ? COL.rock : '#b9b2a0', ...Y(Math.cos(a) * r * 1.4, 0.55 + rnd() * 0.3, 0.9 - Math.sin(a) * r * 0.6), 1.2, 0.8, 1.1);
+  }
+  statue(tb, ...Y(0, 0.95, 0.9), ry, { s: 1.4, pedestal: 1.5, helmet: true, spear: true, color: COL.marble });
+  for (const s of [-1, 1]) {
+    tb.box(3.0, 1.0, 1.7, COL.travertine, ...Y(s * 3.1, 0.5, 1.2), ry);
+    riverGod(tb, ...Y(s * 3.1, 1.0, 1.2), ry, s);
+  }
+  sheWolf(tb, ...Y(0, 0.75, 2.05), ry + Math.PI / 2);
+  // basin and water, a cascade over the rocks
+  const b = Y(0, 0, 1.0);
+  tb.place(new THREE.CylinderGeometry(4.7, 4.8, 0.9, 16, 1, true, ry - Math.PI / 2, Math.PI), COL.travertine, b[0], y + 0.45, b[2]);
+  tb.place(new THREE.RingGeometry(4.4, 4.8, 16, 1, 0, Math.PI), COL.trim, b[0], y + 0.91, b[2], -Math.PI / 2, 0, ry + Math.PI);
+  tb.place(new THREE.CircleGeometry(4.45, 16, 0, Math.PI), COL.water, b[0], y + 0.7, b[2], -Math.PI / 2, 0, ry + Math.PI);
+  tb.box(1.4, 0.9, 0.06, '#cfe8f5', ...Y(0, 0.95, 2.45), ry, -0.35);
+}
+
+// Bronze she-wolf, standing side-on (along local x), with the twins under her.
+function sheWolf(tb, x, y, z, ry) {
+  const L = local(x, y, z, ry);
+  const B = COL.bronze;
+  tb.orient(new THREE.SphereGeometry(0.28, 7, 5), B, ...L(0, 0.55, 0), ry, 0, Math.PI / 2, 1, 2.4, 0.85);
+  tb.sphere(0.2, 1, B, ...L(0.68, 0.72, 0));
+  tb.orient(new THREE.ConeGeometry(0.1, 0.3, 5), B, ...L(0.92, 0.66, 0), ry, 0, -Math.PI / 2);
+  for (const s of [-1, 1]) tb.orient(new THREE.ConeGeometry(0.06, 0.16, 4), B, ...L(0.64, 0.92, s * 0.09), ry);
+  for (const [lx, lz] of [[0.42, 0.13], [0.42, -0.13], [-0.42, 0.13], [-0.42, -0.13]]) tb.box(0.09, 0.42, 0.09, B, ...L(lx, 0.21, lz), ry);
+  tb.orient(new THREE.CylinderGeometry(0.04, 0.06, 0.55, 4), B, ...L(-0.82, 0.48, 0), ry, 0, 0.9);
+  for (const s of [-1, 1]) tb.sphere(0.1, 0, B, ...L(s * 0.15, 0.12, 0.05));
+}
+
+// Valadier's ramps: on the bank south of the terraces two flights climb from the street by the
+// piazza to the top of the hill in a zig-zag, each carried on a blind-arcaded wall with a
+// balustrade on its open side. Decoration only, outside the drivable area. The flights are laid
+// by level: each end sits where the bank comes down to the given height, measured south of the
+// loggia, and trees asked for on them (the city's bank planting) are left out.
+const RAMP_W = 3.2;
+function buildRamps(ctx, tb, C) {
+  const H = ctx.terrain.heightAt;
+  const slopeAt = (dz, level) => {
+    const z = C.z + dz;
+    for (let x = C.x + 40; x > C.x - 20; x -= 0.25) if (H(x, z) <= level) return [x - RAMP_W / 2, z];
+    return null;
+  };
+  const foot = slopeAt(52, -12.2), turn = slopeAt(28, -6.2), top = slopeAt(50, -1.2);
+  if (!foot || !turn || !top) return;
+  const flights = [[foot, turn], [turn, top]];
+  const near = (x, z, pad) => flights.some(([a, b]) => segDist2(x, z, a[0], a[1], b[0], b[1]) < (RAMP_W / 2 + pad) ** 2);
+  for (let i = ctx.plantQueue.length - 1; i >= 0; i--) if (near(ctx.plantQueue[i].x, ctx.plantQueue[i].z, 1.5)) ctx.plantQueue.splice(i, 1);
+  let level = -Infinity, landing = 0;
+  for (const [a, b] of flights) {
+    level = rampFlight(tb, H, a, b, level);
+    if (b === turn) landing = level;
+    // keep the city's trees and the park's props off the flight
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L, w = RAMP_W / 2 + 1;
+    ctx.reserve({ ring: [[a[0] - ux - uz * w, a[1] - uz + ux * w], [b[0] + ux - uz * w, b[1] + uz + ux * w], [b[0] + ux + uz * w, b[1] + uz - ux * w], [a[0] - ux + uz * w, a[1] - uz - ux * w]] });
+  }
+  // the landing at the turn
+  const [tx, tz] = turn, base = H(tx, tz) - 0.8, ry = alongY(tx - foot[0], tz - foot[1]);
+  tb.box(RAMP_W + 1.1, landing - base, RAMP_W + 1.1, COL.wall, tx, (landing + base) / 2, tz, ry);
+  tb.box(RAMP_W + 1.3, 0.22, RAMP_W + 1.3, COL.trim, tx, landing - 0.08, tz, ry);
+}
+
+// One flight from a (low) up to b: a paved slab on the bank (never below `from`), a blind-arcaded
+// wall down to the ground on the open side, coping, a balustrade and newel piers with urns at the
+// foot. Returns the level at its top.
+function rampFlight(tb, H, a, b, from) {
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L;
+  let px = -uz, pz = ux; // across the flight, towards the open (downhill) side
+  if (H(a[0] + px * 2, a[1] + pz * 2) > H(a[0] - px * 2, a[1] - pz * 2)) { px = -px; pz = -pz; }
+  const hw = RAMP_W / 2, n = Math.max(2, Math.round(L / 2.2)), seg = L / n;
+  const S = [];
+  let y = from;
+  for (let i = 0; i <= n; i++) {
+    const x = a[0] + ux * seg * i, z = a[1] + uz * seg * i;
+    const up = H(x - px * hw, z - pz * hw);
+    y = Math.max(y, up + 0.25, H(x, z) + 0.25);
+    S.push({ x, z, y, up: up - 0.3, foot: Math.min(H(x + px * hw, z + pz * hw), y) - 0.6 });
+  }
+  const P = (q, d, yy) => [q.x + px * d, yy, q.z + pz * d];
+  const out = [px, 0, pz], back = [-px, 0, -pz], ry = alongY(ux, uz), arch = archOutline(1.5, 2.3);
+  for (let i = 0; i < n; i++) {
+    const q = S[i], r = S[i + 1];
+    tb.poly([P(q, -hw, q.y), P(r, -hw, r.y), P(r, hw, r.y), P(q, hw, q.y)], COL.gravel, [0, 1, 0]);
+    tb.poly([P(q, hw, q.y), P(r, hw, r.y), P(r, hw, r.foot), P(q, hw, q.foot)], COL.wall, out);
+    tb.poly([P(q, -hw, q.y), P(r, -hw, r.y), P(r, -hw, r.up), P(q, -hw, q.up)], COL.wallShade, back);
+    const mx = (q.x + r.x) / 2 + px * (hw + 0.06), mz = (q.z + r.z) / 2 + pz * (hw + 0.06);
+    tb.orient(new THREE.BoxGeometry(seg + 0.06, 0.24, 0.5), COL.trim, mx, (q.y + r.y) / 2 - 0.1, mz, ry, 0, Math.atan2(r.y - q.y, seg));
+    const ground = Math.max(q.foot, r.foot) + 0.6;
+    if (i % 2 === 0 && Math.min(q.y, r.y) - ground > 3.2) {
+      tb.place(new THREE.ShapeGeometry(arch, 6), COL.recess, mx, ground + 0.15, mz, 0, faceY(px, pz), 0);
+    }
+  }
+  const levelAt = (x, z) => {
+    const t = Math.min(n, Math.max(0, ((x - a[0]) * ux + (z - a[1]) * uz) / seg)), i = Math.min(n - 1, Math.floor(t));
+    return S[i].y + (S[i + 1].y - S[i].y) * (t - i);
+  };
+  balustrade(tb, S.map((q) => [q.x + px * (hw - 0.2), q.z + pz * (hw - 0.2)]), levelAt, { height: 0.95, panel: 2.2 });
+  for (const d of [-hw + 0.25, hw - 0.25]) {
+    const q = S[0], x = q.x + px * d - ux * 0.3, z = q.z + pz * d - uz * 0.3;
+    tb.box(0.6, 1.5, 0.6, COL.trim, x, q.y + 0.45, z, ry);
+    urn(tb, x, q.y + 1.2, z, 0.7, COL.trim, COL.flowerRed);
+  }
+  return S[n].y;
+}
+
 // Colonna rostrata: a stout column studded with bronze ship prows, on a tall pedestal.
 function rostralColumn(tb, x, z, y, ry) {
   const L = local(x, y, z, ry);
@@ -305,7 +436,7 @@ function rostralColumn(tb, x, z, y, ry) {
   tb.sphere(0.42, 1, COL.gilt, ...L(0, 8.85, 0));
 }
 
-// Reclining bearded river god leaning on an urn (Tiber and Aniene beside the Dea Roma).
+// Reclining bearded river god leaning on an urn (the Tiber and the Aniene beside the Dea Roma).
 function riverGod(tb, x, y, z, ry, side) {
   const L = local(x, y, z, ry);
   const M = COL.marble;

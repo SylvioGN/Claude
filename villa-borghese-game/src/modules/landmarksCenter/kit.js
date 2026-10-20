@@ -1,6 +1,8 @@
 // Small toolkit for the central landmarks: a local building frame on top of GeoBuilder, roofs,
 // columns, crenellations, drawn arches and simple statues.
 import * as THREE from 'three';
+import { canvasTexture } from '../../core/util.js';
+import { fbm2, noise2 } from '../../core/rng.js';
 
 const _m = new THREE.Matrix4();
 const _r = new THREE.Matrix4();
@@ -28,6 +30,8 @@ export class Frame {
     this.c = Math.cos(angle); this.s = Math.sin(angle);
   }
   w(u, v) { return [this.x + u * this.c - v * this.s, this.z + u * this.s + v * this.c]; }
+  // World direction of the local direction (du, dv).
+  dir(du, dv) { return [du * this.c - dv * this.s, du * this.s + dv * this.c]; }
   local(x, z) {
     const dx = x - this.x, dz = z - this.z;
     return [dx * this.c + dz * this.s, -dx * this.s + dz * this.c];
@@ -237,6 +241,55 @@ export class Tris {
   }
 }
 
+// The grain of grainMaterial() darkens by about this much on average; Painted colours are lifted to match.
+const GRAIN_GAIN = 1.12;
+
+// Ground cover as triangles with per-vertex colour: the current colour, broken up by soft noise
+// (worn and lush patches), and world-space UVs for the tiled grain of grainMaterial(). A vertex
+// [x, y, z, t] blends t of the way to the colour's `fade` partner (soft edges into the lawn).
+export class Painted {
+  constructor(vary = 0.07) { this.p = []; this.c = []; this.vary = vary; this.col = new THREE.Color(); this.fade = new THREE.Color(); }
+  color(c, fade = c) { this.col.set(c); this.fade.set(fade); return this; }
+  tri(...verts) {
+    for (const [x, y, z, t = 0] of verts) {
+      const k = GRAIN_GAIN * (1 + this.vary * (fbm2(x / 9, z / 9, 2) + 0.6 * noise2(x / 2.2, z / 2.2)));
+      this.p.push(x, y, z);
+      this.c.push((this.col.r + (this.fade.r - this.col.r) * t) * k, (this.col.g + (this.fade.g - this.col.g) * t) * k, (this.col.b + (this.fade.b - this.col.b) * t) * k);
+    }
+  }
+  quad(a, b, c, d) { this.tri(a, b, c); this.tri(a, c, d); }
+  geometry(tile = 4) {
+    const g = new THREE.BufferGeometry();
+    const uv = new Float32Array((this.p.length / 3) * 2);
+    for (let i = 0, j = 0; i < this.p.length; i += 3, j += 2) { uv[j] = this.p[i] / tile; uv[j + 1] = this.p[i + 2] / tile; }
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    return g;
+  }
+}
+
+// Vertex-colour material with a tiled grain (sand grit, grass blades) like the terrain's detail.
+export function grainMaterial(rnd) {
+  const map = canvasTexture(128, 128, (g, w, h) => {
+    g.fillStyle = '#f7f7f7'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 1500; i++) {
+      const v = Math.round(200 + rnd() * 55);
+      g.fillStyle = `rgb(${v},${v},${v})`;
+      g.beginPath(); g.arc(rnd() * w, rnd() * h, 0.5 + rnd() * 1.3, 0, Math.PI * 2); g.fill();
+    }
+    g.lineWidth = 1;
+    for (let i = 0; i < 260; i++) {
+      const x = rnd() * w, y = rnd() * h, v = Math.round(185 + rnd() * 40);
+      g.strokeStyle = `rgb(${v},${v},${v})`;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + rnd() * 3 - 1.5, y - 2 - rnd() * 3); g.stroke();
+    }
+  });
+  return new THREE.MeshLambertMaterial({ vertexColors: true, map });
+}
+
 const FACES = { '+v': [0, 1, 0], '-v': [0, -1, Math.PI], '+u': [1, 0, Math.PI / 2], '-u': [-1, 0, -Math.PI / 2] };
 
 // Window or door on a wall face ('+v' | '-v' | '+u' | '-u'). (u, v) is a point on the wall plane,
@@ -264,4 +317,30 @@ export function opening(f, face, u, y, v, w, h, { arch = false, frame = C.traver
       f.box(w * 0.5, h, 0.07, shutters, su + d * cs, y, sv - d * sn, ry);
     }
   }
+}
+
+// Authored postcard view for a tour stop: core/game.js parks the cart on `spot` ([x, z]) facing the
+// world direction `face` ([dx, dz]) and core/camera.js frames the photo from `cam` ([x, z, height])
+// towards `look` ([x, z, height]); heights are above the ground at the spot. The corridor from just
+// behind the camera, around the cart, to `far` (default: look) is reserved so the trees and props
+// placed later keep the photo clear; `wide` is its half-width at the far end.
+export function photoView(ctx, id, { spot, face, cam, look, fov, far = look, wide = 5 }) {
+  const stop = ctx.game?.stops?.find((s) => s.id === id);
+  if (!stop) return null;
+  const H = ctx.terrain.heightAt, y = H(spot[0], spot[1]);
+  stop.spotX = spot[0]; stop.spotZ = spot[1];
+  stop.view = {
+    heading: Math.atan2(face[0], face[1]),
+    cam: [cam[0], Math.max(y + cam[2], H(cam[0], cam[1]) + 1.2), cam[1]],
+    look: [look[0], y + look[2], look[1]],
+    ...(fov ? { fov } : {}),
+  };
+  let dx = far[0] - cam[0], dz = far[1] - cam[1];
+  const L = Math.hypot(dx, dz) || 1;
+  dx /= L; dz /= L;
+  const a = (spot[0] - cam[0]) * dx + (spot[1] - cam[1]) * dz, o = -(spot[0] - cam[0]) * dz + (spot[1] - cam[1]) * dx;
+  const w = (a / L) * wide;
+  const P = (s, t) => [cam[0] + dx * s - dz * t, cam[1] + dz * s + dx * t];
+  ctx.reserve({ ring: [P(-2, -4), P(a, Math.min(o - 3.5, -w)), P(L, -wide), P(L, wide), P(a, Math.max(o + 3.5, w)), P(-2, 4)] });
+  return stop.view;
 }

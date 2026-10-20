@@ -227,7 +227,7 @@ export function createCollectibles(env) {
         if (p.t > 0.35) { p.state = 2; continue; }
       } else if (env.playing) {
         for (const cc of c.circles) {
-          const ex = p.x - cc.x, ez = p.z - cc.z, rr = cc.r + 1.2;
+          const ex = p.x - cc.x, ez = p.z - cc.z, rr = cc.r + 1.9;
           if (ex * ex + ez * ez < rr * rr) {
             p.state = 1; p.t = 0;
             found.add(p.id); saveFound();

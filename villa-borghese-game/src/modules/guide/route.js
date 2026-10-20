@@ -1,15 +1,18 @@
 // Route finding for the guide: the park's avenues as a graph (path polylines joined where they
 // meet or cross) and A* from any point in the park to a goal on an avenue.
 // No three.js in here so it can be tested with plain node.
-import { closestOnSegment, pointInRing, distToRingEdge, ringBBox } from '../../core/geo.js';
+import { closestOnSegment, segDist2, pointInRing, distToRingEdge, ringBBox } from '../../core/geo.js';
 
 // Cost per unit of length: wide gravel avenues first, footways and dirt paths when they save time.
 const OFF_PATH = 1.8;   // driving across the grass to reach an avenue
 const KIND_COST = { viale: 1, bridge: 1, footway: 1.12, path: 1.3, plaza: 1.05, grass: OFF_PATH };
+const BLOCKED_COST = 25; // an avenue stretch that runs into something solid
 const CELL = 12;        // edge hash cell size
 const cellKey = (i, j) => (i + 4096) * 8192 + j + 4096;
 
 // blocked(ax, az, bx, bz): true when a straight hop across the grass would hit a wall or water.
+// It also marks stretches of avenue that run into a building, a wall or a big basin (a footway
+// through a loggia, say): the route only takes those when there is no other way.
 export function buildRouteGraph(paths, { isInside = () => true, plazas = [], join = 1.5, blocked = () => false } = {}) {
   // --- 1. raw segments (inside the park only; bridges may leave the drivable outline)
   const segs = [];
@@ -99,10 +102,11 @@ export function buildRouteGraph(paths, { isInside = () => true, plazas = [], joi
     if (a === b) return;
     if (adj[a].some((e) => e[0] === b)) return;
     const len = Math.hypot(nx[b] - nx[a], nz[b] - nz[a]);
-    const cost = len * (KIND_COST[kind] || 1.2);
-    adj[a].push([b, cost]);
-    adj[b].push([a, cost]);
-    edges.push({ a, b, kf: KIND_COST[kind] || 1.2 });
+    const shut = kind !== 'bridge' && kind !== 'grass' && blocked(nx[a], nz[a], nx[b], nz[b]);
+    const kf = (KIND_COST[kind] || 1.2) * (shut ? BLOCKED_COST : 1);
+    adj[a].push([b, len * kf]);
+    adj[b].push([a, len * kf]);
+    edges.push({ a, b, kf, kind });
   };
   for (const s of segs) {
     const ts = [...new Set(s.splits)].sort((p, q) => p - q);
@@ -144,10 +148,9 @@ export function buildRouteGraph(paths, { isInside = () => true, plazas = [], joi
     comp[p] = comp[e.a];
     adj[e.a] = adj[e.a].filter((a) => a[0] !== e.b);
     adj[e.b] = adj[e.b].filter((a) => a[0] !== e.a);
-    const kind = Object.keys(KIND_COST).find((k) => KIND_COST[k] === e.kf) || 'path';
     edges.splice(ei, 1);
-    link(e.a, p, kind);
-    link(p, e.b, kind);
+    link(e.a, p, e.kind);
+    link(p, e.b, e.kind);
     return p;
   };
   members.forEach((list, ci) => {
@@ -325,4 +328,130 @@ export function findRoute(graph, sx, sz, gx, gz, blocked = () => false) {
     if (!last || Math.hypot(last[0] - x, last[1] - z) > 0.05) out.push([x, z]);
   }
   return out.reverse();
+}
+
+// ---------------------------------------------------------------- shaping the golden line
+
+// Rounds the corners of a route into arcs the cart can actually drive (radius r, less where the
+// legs are short), so the dots start the turn early instead of pointing past the junction.
+export function roundCorners(pts, r = 3.5, step = 1) {
+  if (pts.length < 3) return pts;
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [ax, az] = pts[i - 1], [bx, bz] = pts[i], [cx, cz] = pts[i + 1];
+    const l0 = Math.hypot(bx - ax, bz - az), l1 = Math.hypot(cx - bx, cz - bz);
+    if (l0 < 1e-6 || l1 < 1e-6) continue;
+    const ux = (bx - ax) / l0, uz = (bz - az) / l0, vx = (cx - bx) / l1, vz = (cz - bz) / l1;
+    const turn = Math.acos(Math.max(-1, Math.min(1, ux * vx + uz * vz)));
+    if (turn < 0.35) { out.push(pts[i]); continue; }
+    // tangent length, at most 45% of either leg so neighbouring arcs never overlap
+    const d = Math.min(r * Math.tan(turn / 2), l0 * 0.45, l1 * 0.45);
+    const p0x = bx - ux * d, p0z = bz - uz * d, p1x = bx + vx * d, p1z = bz + vz * d;
+    // quadratic Bezier through the corner (close to a circular arc for these angles)
+    const n = Math.max(2, Math.ceil((d * turn) / step));
+    for (let k = 0; k <= n; k++) {
+      const t = k / n, a = (1 - t) * (1 - t), b = 2 * t * (1 - t), c = t * t;
+      out.push([a * p0x + b * bx + c * p1x, a * p0z + b * bz + c * p1z]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// Slides the route sideways, smoothly and by a few units at most, until the cart fits past every
+// collider with `clear` to spare: the line bends round a statue on a roundabout island, a lamp
+// standing in an avenue or a roadworks barrier, instead of leading the driver into it.
+//   shapes(x, z, r, out): fills `out` with the collider shapes near (x, z): circles {type: 0, x, z, r}
+//     and wall segments {type: 1, ax, az, bx, bz, pad}
+//   ok(ax, az, bx, bz): may a route point move from a to b (stays in the park, does not jump a wall)
+// The two ends (the cart and the photo spot) stay where they are.
+export function clearRoute(pts, { shapes, ok = () => true, clear = 1.5, maxShift = 3, step = 1, slope = 0.45, ends = 4 } = {}) {
+  if (!shapes || pts.length < 2) return pts;
+  // 1. resample about every `step`, keeping the original corners
+  const xs = [pts[0][0]], zs = [pts[0][1]], ss = [0];
+  for (let i = 1; i < pts.length; i++) {
+    const ax = pts[i - 1][0], az = pts[i - 1][1], bx = pts[i][0], bz = pts[i][1];
+    const L = Math.hypot(bx - ax, bz - az);
+    if (L < 1e-6) continue;
+    const n = Math.max(1, Math.ceil(L / step)), s0 = ss[ss.length - 1];
+    for (let k = 1; k <= n; k++) { xs.push(ax + ((bx - ax) * k) / n); zs.push(az + ((bz - az) * k) / n); ss.push(s0 + (L * k) / n); }
+  }
+  const N = xs.length, total = ss[N - 1];
+  const near = [];
+  const gap = (x, z) => {
+    let g = Infinity;
+    for (let k = 0; k < near.length; k++) {
+      const s = near[k];
+      const d = s.type === 0 ? Math.hypot(x - s.x, z - s.z) - s.r : Math.sqrt(segDist2(x, z, s.ax, s.az, s.bx, s.bz)) - s.pad;
+      if (d < g) g = d;
+    }
+    return g;
+  };
+
+  // 2. the shift each point needs on its own (+ = to the left of the direction of travel)
+  const nxs = new Float64Array(N), nzs = new Float64Array(N), want = new Float64Array(N);
+  let any = false;
+  for (let i = 0; i < N; i++) {
+    const a = Math.max(0, i - 2), b = Math.min(N - 1, i + 2);
+    let tx = xs[b] - xs[a], tz = zs[b] - zs[a];
+    const tl = Math.hypot(tx, tz) || 1;
+    tx /= tl; tz /= tl;
+    nxs[i] = -tz; nzs[i] = tx;
+    const room = Math.min(ss[i], total - ss[i]);
+    if (room < 0.5) continue;
+    near.length = 0;
+    shapes(xs[i], zs[i], clear + maxShift + 0.5, near);
+    if (!near.length) continue;
+    const g0 = gap(xs[i], zs[i]);
+    if (g0 >= clear) continue;
+    let best = 0, bestGap = g0;
+    for (let o = 0.25; o <= maxShift + 1e-6 && bestGap < clear; o += 0.25) {
+      for (let side = 0; side < 2; side++) {
+        const sg = side ? -1 : 1, qx = xs[i] + nxs[i] * o * sg, qz = zs[i] + nzs[i] * o * sg;
+        const g = gap(qx, qz);
+        if (g > bestGap + 0.05 && ok(xs[i], zs[i], qx, qz)) { best = o * sg; bestGap = g; if (g >= clear) break; }
+      }
+    }
+    want[i] = best;
+    if (best) any = true;
+  }
+  if (!any) return pts;
+
+  // 3. ease in and out of each bend (tents of the given slope), shifts on both sides partly cancel
+  const pos = new Float64Array(N), neg = new Float64Array(N);
+  for (let i = 0; i < N; i++) { pos[i] = Math.max(0, want[i]); neg[i] = Math.max(0, -want[i]); }
+  for (let i = 1; i < N; i++) {
+    const d = (ss[i] - ss[i - 1]) * slope;
+    pos[i] = Math.max(pos[i], pos[i - 1] - d); neg[i] = Math.max(neg[i], neg[i - 1] - d);
+  }
+  for (let i = N - 2; i >= 0; i--) {
+    const d = (ss[i + 1] - ss[i]) * slope;
+    pos[i] = Math.max(pos[i], pos[i + 1] - d); neg[i] = Math.max(neg[i], neg[i + 1] - d);
+  }
+  const out = [];
+  for (let i = 0; i < N; i++) {
+    const room = Math.min(ss[i], total - ss[i]);
+    const o = (pos[i] - neg[i]) * Math.min(1, room / ends);
+    out.push([xs[i] + nxs[i] * o, zs[i] + nzs[i] * o]);
+  }
+  return simplify(out, 0.08);
+}
+
+// Douglas-Peucker: drops points that lie within tol of the line through their neighbours.
+export function simplify(pts, tol) {
+  const n = pts.length;
+  if (n < 3) return pts;
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const stack = [0, n - 1];
+  while (stack.length) {
+    const b = stack.pop(), a = stack.pop();
+    let worst = -1, wd = tol * tol;
+    for (let i = a + 1; i < b; i++) {
+      const d = segDist2(pts[i][0], pts[i][1], pts[a][0], pts[a][1], pts[b][0], pts[b][1]);
+      if (d > wd) { wd = d; worst = i; }
+    }
+    if (worst >= 0) { keep[worst] = 1; stack.push(a, worst, worst, b); }
+  }
+  return pts.filter((p, i) => keep[i]);
 }

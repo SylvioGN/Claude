@@ -12,6 +12,7 @@ const PIGEON_PALS = [
 ].map(([b, w, n]) => ({ p: [pack(b), pack(w), 0, pack(n)], a: 0, l: 0 }));
 
 export function createAnimals(env) {
+  const _anim = [0, 0, 0, 0]; // per-instance animation values, copied by Crowd.push
   const { ctx, graph, crowds, fx } = env;
   const T = ctx.terrain, MAP = ctx.MAP;
   const rnd = ctx.rng('actors-animals');
@@ -156,7 +157,8 @@ export function createAnimals(env) {
           fx.shadow(b.x, b.y, b.z, 0.22 * b.s);
         } else {
           const a = Math.PI / 2 + Math.sin(b.flap) * 0.95;
-          crowds.pigeonFly.push(b.x, b.y, b.z, b.h, b.s, b.pal, [0, 0, a, a], 0, -clamp(b.vy * 0.06, -0.4, 0.4));
+          _anim[0] = 0; _anim[1] = 0; _anim[2] = a; _anim[3] = a;
+          crowds.pigeonFly.push(b.x, b.y, b.z, b.h, b.s, b.pal, _anim, 0, -clamp(b.vy * 0.06, -0.4, 0.4));
           const g = T.heightAt(b.x, b.z);
           fx.shadow(b.x, g, b.z, 0.25 * b.s * clamp(1 - (b.y - g) / 12, 0.3, 1));
         }
@@ -328,7 +330,8 @@ export function createAnimals(env) {
       d.phase += dt * (moving ? 20 : 0);
       const x = d.x + d.ox, z = d.z + d.oz, land = !inWater(x, z);
       const y = surfY(x, z) + (land ? 0 : -0.04) + Math.sin(Math.min(1, d.hop / 0.35) * Math.PI) * 0.3;
-      crowds.duck.push(x, y, z, d.h, 0.7, DUCKLING, [d.phase, land && moving ? 0.7 : 0, 0, 0], 0, 0, land && moving ? Math.sin(d.phase) * 0.15 : 0);
+      _anim[0] = d.phase; _anim[1] = land && moving ? 0.7 : 0; _anim[2] = 0; _anim[3] = 0;
+      crowds.duck.push(x, y, z, d.h, 0.7, DUCKLING, _anim, 0, 0, land && moving ? Math.sin(d.phase) * 0.15 : 0);
       if (land) fx.shadow(x, surfY(x, z), z, 0.2);
     });
   }

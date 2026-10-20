@@ -1,6 +1,6 @@
 // Cinema dei Piccoli: the tiny green wooden chalet on Viale della Pineta (63 seats, a Guinness
 // record as one of the smallest cinemas in the world). Front gable faces the avenue.
-import { Frame, gableGeometry } from './parts.js';
+import { Frame, gableGeometry, photoView } from './parts.js';
 import { RECT } from './atlas.js';
 
 const C = {
@@ -110,5 +110,9 @@ export function buildCinema(ctx, gb, decals) {
   const e = easel.world(0, 0, 0);
   ctx.colliders.addCircle(e.x, e.z, 0.45, 'sign');
   ctx.reserve({ x: cx + fx, z: cz + fz, r: 6.6 });
+
+  // Tour stop: the cart beside the porch, seen from across the avenue with the front gable and
+  // the poster side in the sun behind it.
+  photoView(ctx, 'cinema', { x: cx + fx * front, z: cz + fz * front, from: Math.atan2(fx, fz) - 0.3, dist: 15, height: 4.5, cart: 9.5, side: 1.5, turn: 0.7, aimY: 1.4, width: 9 });
   return { x: cx, z: cz, y: y0 };
 }

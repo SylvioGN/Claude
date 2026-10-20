@@ -1,7 +1,8 @@
 // Park furniture that makes the avenues feel lived-in: benches, bins, nasoni (Rome's drinking
 // fountains), marble and bronze statues, info boards, coin telescopes, café kiosks with gelato
-// signs, bike and risciò rentals, toilets, playgrounds, small fountains (all from MAP.POIS) and
-// Roman lamp posts along every viale.
+// signs, bike and risciò rentals, toilets, playgrounds, small fountains, an obelisk (all from
+// MAP.POIS) and Roman lamp posts along every viale. Nothing stands in a path's drivable width, in a
+// flower bed, in an area a landmark module reserved or at the ends of the Pincio footbridge.
 //
 // Static props are merged per chunk into two layers (props/batch.js): 'near' for small things,
 // hidden beyond ~115 units, and 'far' for lamps, statues and kiosks. Only the carousel and the
@@ -31,6 +32,9 @@ const MONUMENTS = {
 // Footprint radius and how far from the path edge each statue model stands.
 const STATUE_SIZE = { horse: [1.45, 1.6], seated: [0.85, 1.1], bust: [0.45, 0.7], stele: [0.75, 0.9], standing: [0.7, 1.0] };
 
+// Room kept free around both ends of the Pincio footbridge: the cart turns sharply there.
+const BRIDGE_CLEAR = 12;
+
 // Landmarks given only as a point: room kept free for their own module.
 const POINT_ROOM = {
   terrazza: 5, idrocronometro: 6, acquafelix: 2.5, zoo_gate: 8, boats: 5, leccio: 3, goethe: 5,
@@ -55,25 +59,55 @@ export async function create(ctx) {
 
   // ------------------------------------------------------------ where things may stand
 
+  const withBox = (ring) => ({ ring, bb: geo.ringBBox(ring) });
+  const nearRing = (list, x, z, pad) => list.some(({ ring, bb }) => x > bb.minX - pad && x < bb.maxX + pad && z > bb.minZ - pad && z < bb.maxZ + pad
+    && (geo.pointInRing(x, z, ring) || (pad > 0 && geo.distToRingEdge(x, z, ring) < pad)));
   const blockers = [
     ...Object.values(MAP.ANCHORS).filter((a) => a.footprint).map((a) => a.footprint),
     ...MAP.BUILDINGS.map((b) => b.r),
-  ].map((ring) => ({ ring, bb: geo.ringBBox(ring) }));
+  ].map(withBox);
   const rooms = Object.entries(POINT_ROOM).filter(([k]) => MAP.ANCHORS[k]).map(([k, r]) => ({ x: MAP.ANCHORS[k].x, z: MAP.ANCHORS[k].z, r }));
+  // flower beds: vegetation plants them without colliders
+  const beds = MAP.LAWNS.filter((l) => l.k === 'flowers').map((l) => withBox(l.r));
+  const bridgeEnds = MAP.PATHS.filter((p) => p.k === 'bridge').flatMap((p) => [p.p[0], p.p[p.p.length - 1]]);
 
   function onLandmark(x, z, pad, useRooms = true) {
-    for (const b of blockers) {
-      if (x < b.bb.minX - pad || x > b.bb.maxX + pad || z < b.bb.minZ - pad || z > b.bb.maxZ + pad) continue;
-      if (geo.pointInRing(x, z, b.ring) || (pad > 0 && geo.distToRingEdge(x, z, b.ring) < pad)) return true;
-    }
+    if (nearRing(blockers, x, z, pad)) return true;
     if (useRooms) for (const p of rooms) if (Math.hypot(x - p.x, z - p.z) < p.r + pad) return true;
     return false;
   }
 
+  // Distance from (x, z) to the edge of the nearest path, negative inside it (reliable up to 2
+  // units out). Unlike T.nearestPath, which only knows the nearest centre line, this also sees a
+  // wide avenue next to a narrow footway.
+  const SEG_CELL = 16, segGrid = new Map();
+  for (const sg of T.segments) {
+    const pad = sg.w / 2 + 2;
+    const i0 = Math.floor((Math.min(sg.ax, sg.bx) - pad) / SEG_CELL), i1 = Math.floor((Math.max(sg.ax, sg.bx) + pad) / SEG_CELL);
+    const j0 = Math.floor((Math.min(sg.az, sg.bz) - pad) / SEG_CELL), j1 = Math.floor((Math.max(sg.az, sg.bz) + pad) / SEG_CELL);
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const k = `${i},${j}`;
+        (segGrid.get(k) || segGrid.set(k, []).get(k)).push(sg);
+      }
+    }
+  }
+  function pathGap(x, z) {
+    let gap = Infinity;
+    for (const sg of segGrid.get(`${Math.floor(x / SEG_CELL)},${Math.floor(z / SEG_CELL)}`) || []) {
+      gap = Math.min(gap, Math.sqrt(geo.segDist2(x, z, sg.ax, sg.az, sg.bx, sg.bz)) - sg.w / 2);
+    }
+    return gap;
+  }
+
   const GROUND = new Set([SURF.GRASS, SURF.FOREST, SURF.PLAZA]);
-  function siteOk(x, z, r, { onPath = false, useRooms = true } = {}) {
+  // gap: how far the point must stay from the edge of every path.
+  function siteOk(x, z, r, { onPath = false, useRooms = true, gap = 0.2 } = {}) {
     const s = T.surfaceAt(x, z);
     if (!GROUND.has(s) && !(onPath && s === SURF.PATH)) return false;
+    if (!onPath && pathGap(x, z) < gap) return false;
+    if (bridgeEnds.some(([bx, bz]) => Math.hypot(x - bx, z - bz) < BRIDGE_CLEAR + r)) return false;
+    if (nearRing(beds, x, z, 0.5 + r * 0.5)) return false;
     if (ctx.isReserved(x, z, r) || onLandmark(x, z, r, useRooms)) return false;
     return col.isFree(x, z, r);
   }
@@ -125,7 +159,7 @@ export async function create(ctx) {
       if (T.surfaceAt(x, z) === SURF.PLAZA && (!np || np.d > np.w / 2 + margin)) {
         s = { x, z, ry: np && np.d < 10 ? faceTo(x, z, np.x, np.z) : facePlaza(x, z) };
       } else s = besidePath(x, z, margin);
-      if (siteOk(s.x, s.z, r, opts)) return s;
+      if (siteOk(s.x, s.z, r, { gap: margin - 0.05, ...opts })) return s;
     }
     return null;
   }
@@ -133,7 +167,7 @@ export async function create(ctx) {
   // First spot on rings of growing radius around (x, z) that passes test(x, z).
   function searchNear(x, z, radii, test) {
     for (const d of radii) {
-      const n = d === 0 ? 1 : 10;
+      const n = d === 0 ? 1 : Math.max(10, Math.ceil(d * 1.6));
       const a0 = rnd() * Math.PI * 2;
       for (let i = 0; i < n; i++) {
         const a = a0 + (i / n) * Math.PI * 2, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
@@ -164,9 +198,12 @@ export async function create(ctx) {
     return o;
   }
 
-  // playgrounds first: they need the most room. The Pincio one is a carousel and a bouncy castle.
+  // playgrounds first: they need the most room. The Pincio one is a carousel and a bouncy castle;
+  // the one at the Casina di Raffaello is landmarksCenter's.
   const carousels = [];
+  const raffaello = MAP.ANCHORS.raffaello;
   for (const p of pois('playground')) {
+    if (ctx.isReserved(p.x, p.z) || (raffaello && Math.hypot(p.x - raffaello.x, p.z - raffaello.z) < 25)) continue;
     const parts = /giostra/i.test(p.n || '')
       ? [['carousel', M.carouselBase(), 6.4, 6.4, [[0, 0, 3.2]]], ['castle', M.bouncyCastle(), 4.4, 4.8, [[0, -0.3, 2.3]]]]
       : [['playground', M.playground(), ...M.PLAYGROUND_SIZE, M.PLAYGROUND_SOLIDS]];
@@ -199,7 +236,7 @@ export async function create(ctx) {
       for (const [lx, lz] of spots) {
         if (n === 3) break;
         const [x, z] = toWorld(o, lx, lz);
-        if (!siteOk(x, z, 1.3)) continue;
+        if (!siteOk(x, z, 1.3, { gap: 0.75 })) continue;
         const ry = o.ry + rnd() * 1.2;
         add(near, M.cafeTable(), x, z, ry);
         add(far, umb, x, z, ry);
@@ -210,7 +247,7 @@ export async function create(ctx) {
     };
     if (inBuilding(p.x, p.z, 3)) {
       // terrace in front of the building, gelato sign by the path
-      const s = searchNear(p.x, p.z, [3, 5, 7, 9], (x, z) => siteOk(x, z, 1.3) && !inBuilding(x, z, 1.5));
+      const s = searchNear(p.x, p.z, [3, 5, 7, 9, 11, 13], (x, z) => siteOk(x, z, 1.3, { gap: 0.75 }) && !inBuilding(x, z, 1.5));
       if (!s) continue;
       const np = T.nearestPath(s.x, s.z);
       const o = { x: s.x, z: s.z, ry: np ? faceTo(s.x, s.z, np.x, np.z) : 0 };
@@ -222,7 +259,7 @@ export async function create(ctx) {
     }
     let o = null;
     for (const m of [2.6, 3.6, 5]) {
-      o = spotFor(p, m, 1.9, { along: [0, 3, -3, 6, -6] });
+      o = spotFor(p, m, 1.9, { along: [0, 3, -3, 6, -6, 9, -9] });
       if (o) break;
     }
     if (!o) continue;
@@ -249,7 +286,7 @@ export async function create(ctx) {
     let surreySide = 0;
     for (const sd of sides) {
       const spots = [2.8, 4.6].map((lx) => toWorld(o, sd * lx, 0.3));
-      if (!spots.every(([x, z]) => siteOk(x, z, 0.75))) continue;
+      if (!spots.every(([x, z]) => siteOk(x, z, 0.75, { gap: 0.8 }))) continue;
       for (const [x, z] of spots) {
         add(far, M.surrey(SURREYS[Math.floor(rnd() * SURREYS.length)]), x, z, o.ry);
         col.addBox(x, z, 1.4, 2.2, -o.ry, 'surrey');
@@ -286,10 +323,11 @@ export async function create(ctx) {
     record('toilets', o.x, o.z, o.ry);
   }
 
-  // statues, busts and memorials
+  // statues, busts and memorials (not where a landmark module keeps the ground clear)
   const islands = MAP.WATER.flatMap((w) => w.h || []);
   for (const p of [...pois('statue'), ...pois('bust'), ...pois('memorial')]) {
     if (p.n === 'Esculapio' || islands.some((r) => geo.pointInRing(p.x, p.z, r))) continue; // landmarksLake's
+    if (p.n === 'Leone del Pincio' || ctx.isReserved(p.x, p.z)) continue; // landmarksPincio's lion
     let [kind, mat] = MONUMENTS[p.n] || [];
     if (!kind) {
       if (p.k === 'bust') kind = 'bust';
@@ -304,6 +342,15 @@ export async function create(ctx) {
     if (kind === 'horse') boxAt(o, 1.45, 2.8, 'statue');
     else col.addCircle(o.x, o.z, r, 'statue');
     record('statue', o.x, o.z, o.ry);
+  }
+  // the little obelisk on its stepped plinth
+  for (const p of pois('obelisk')) {
+    if (ctx.isReserved(p.x, p.z)) continue;
+    const o = spotFor(p, 1.3, 1.0);
+    if (!o) continue;
+    add(far, M.obelisk(), o.x, o.z, o.ry);
+    col.addCircle(o.x, o.z, 0.9, 'statue');
+    record('obelisk', o.x, o.z, o.ry);
   }
 
   // small fountains (the ones without a basin in MAP.WATER)
@@ -393,9 +440,7 @@ export async function create(ctx) {
       for (const side of [first, -first]) {
         for (const shift of [0, 3, -3, 6, -6]) {
           const x = s.x + s.dirX * shift - s.dirZ * side * off, z = s.z + s.dirZ * shift + s.dirX * side * off;
-          const np = T.nearestPath(x, z);
-          if (np && np.d < np.w / 2 + 0.7) continue;
-          if (!siteOk(x, z, 0.45)) continue;
+          if (pathGap(x, z) < 0.7 || !siteOk(x, z, 0.45)) continue;
           add(far, lamp, x, z, 0);
           col.addCircle(x, z, 0.22, 'lamp');
           const k = lampKey(Math.floor(x / LAMP_CELL), Math.floor(z / LAMP_CELL));

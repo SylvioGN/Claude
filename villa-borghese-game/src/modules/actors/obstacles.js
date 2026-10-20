@@ -42,15 +42,26 @@ export function createObstacles(env) {
   };
 
   // --- roadworks: barrier, sign, sand heap and a taper of cones --------------------------------
+  // On the tour avenues for fun, but the barrier and the sand stand at the edge (their inner end
+  // at least 1.7 from the centre line) and the other lane must be clear, so they never block the
+  // way: the golden route bends past them and the cones are there to be knocked over.
   const works = [];
   const staticParts = new RigBuilder();
+  const BARRIER_IN = 1.25 + 0.15; // barrier half-length + collider pad, towards the centre line
+  const laneClear = (s, lat) => {
+    for (let along = -8; along <= 8; along += 2) {
+      const x = s.x + s.e.dx * along - s.e.dz * lat, z = s.z + s.e.dz * along + s.e.dx * lat;
+      if (!ctx.colliders.isFree(x, z, 1.5) || !T.isInside(x, z)) return false;
+    }
+    return true;
+  };
   for (let i = 0; i < 3; i++) {
-    const s = takeSpot(130, (s) => s.e.len >= 24 && farFromStops(s.x, s.z, 30) && s.route);
+    const s = takeSpot(130, (s) => s.e.len >= 24 && s.e.w >= 6.4 && farFromStops(s.x, s.z, 30) && s.route && laneClear(s, -0.6));
     if (!s) break;
     const e = s.e, dx = e.dx, dz = e.dz, rx = -dz, rz = dx;
     const half = e.w / 2;
     const at = (along, lat) => [s.x + dx * along + rx * lat, s.z + dz * along + rz * lat];
-    const [bx, bz] = at(0, half / 2);
+    const [bx, bz] = at(0, Math.max(half - 0.55, 1.7 + BARRIER_IN));
     const by = T.heightAt(bx, bz);
     // local frame: x across the avenue, z towards oncoming traffic
     _m.makeBasis(_v.set(rx, 0, rz), new THREE.Vector3(0, 1, 0), new THREE.Vector3(-dx, 0, -dz)).setPosition(bx, by, bz);

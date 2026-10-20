@@ -179,8 +179,10 @@ const BARK = {
   thin: { color: '#5b4a3a', jitter: 0.08 },
 };
 
+// Crown undersides are only lit by the sky's ground bounce, so they keep most of their brightness
+// (a darker 'under' reads as a black ceiling when the cart drives beneath a big tree).
 const leafPaint = (color, color2, mix, c, r, extra = {}) => ({
-  color, color2, mix, jitter: 0.07, under: 0.55, leaf: 1, grad: [c[1] - r[1], c[1] + r[1], 0.7, 1.12],
+  color, color2, mix, jitter: 0.07, under: 0.82, leaf: 1, grad: [c[1] - r[1], c[1] + r[1], 0.7, 1.12],
   round: { c, r, k: 0.65 }, ...extra,
 });
 
@@ -197,7 +199,7 @@ function umbrellaPine(b, v, lod) {
   const W = [6.2, 5.6, 4.8][v]; // canopy half width
   const cx = tx + lean[0] * 0.25, cz = tz + lean[1] * 0.25, cy = H + 1.2;
   const crown = { c: [cx, cy + 0.4, cz], r: [W, 2.2, W] };
-  const paint = leafPaint('#3f6d33', '#52803c', 0.3, crown.c, crown.r, { grad: [H, H + 3.2, 0.72, 1.15], under: 0.72 });
+  const paint = leafPaint('#3f6d33', '#52803c', 0.3, crown.c, crown.r, { grad: [H, H + 3.2, 0.78, 1.15], under: 0.86 });
   if (hi) {
     const nb = v === 2 ? 3 : 4;
     for (let i = 0; i < nb; i++) {
@@ -225,7 +227,7 @@ function holmOak(b, v, lod) {
     b.limb([0.2, 2.9, -0.1], [1.5, cy - 1.0, -0.7], 0.3, 0.16, 5, BARK.oak);
   }
   const crown = { c: [0, cy, 0], r: [R, RY, R] };
-  const paint = leafPaint('#3a5c30', '#4a6c3b', 0.3, crown.c, crown.r, { under: 0.68, grad: [cy - RY, cy + RY, 0.8, 1.12] });
+  const paint = leafPaint('#3a5c30', '#4a6c3b', 0.3, crown.c, crown.r, { under: 0.82, grad: [cy - RY, cy + RY, 0.84, 1.12] });
   b.blob(R * 0.7, hi ? [8, 6] : 0, 0, cy, 0, { sy: RY / R, flat: 0.6 }, paint);
   const n = hi ? 6 : 3;
   for (let i = 0; i < n; i++) {
@@ -244,7 +246,7 @@ function cedar(b, v, lod) {
   const top = tiers[tiers.length - 1][0] + 1;
   b.trunk(0.8, 0.34, top, hi ? 7 : 5, hi ? 3 : 1, (t) => [0.4 * Math.sin(t * 2.4), 0.2 * t], BARK.cedar);
   const crown = { c: [0, top * 0.55, 0], r: [7, top * 0.6, 7] };
-  const paint = leafPaint('#47695a', '#5e8270', 0.3, crown.c, crown.r, { grad: [2.5, top + 1, 0.78, 1.15], under: 0.62, round: { ...crown, k: 0.4 } });
+  const paint = leafPaint('#47695a', '#5e8270', 0.3, crown.c, crown.r, { grad: [2.5, top + 1, 0.86, 1.15], under: 0.84, round: { ...crown, k: 0.4 } });
   tiers.forEach(([y, r, lobes], i) => {
     if (!hi) lobes = 1;
     const a0 = i * 1.7 + v;
@@ -272,7 +274,7 @@ function plane(b, v, lod) {
   if (hi) for (const tip of tips) b.limb([0.3, fork - 0.3, 0], tip, 0.36, 0.2, 5, BARK.plane);
   else b.limb([0.3, fork - 0.3, 0], [0, cy - 1, 0], 0.38, 0.22, 4, BARK.plane);
   const crown = { c: [0.2, cy + 0.6, 0], r: [R, RY, R] };
-  const paint = leafPaint('#6c9a40', '#a19c45', 0.2, crown.c, crown.r, { under: 0.62 });
+  const paint = leafPaint('#6c9a40', '#a19c45', 0.2, crown.c, crown.r, { under: 0.82 });
   b.blob(R * 0.62, hi ? [8, 6] : 0, 0.2, cy + 0.8, 0, { sy: 0.78, flat: 0.55 }, paint);
   const n = hi ? 6 : 3;
   for (let i = 0; i < n; i++) {
@@ -314,7 +316,7 @@ function magnolia(b, v, lod) {
   const hi = lod === 0;
   b.trunk(0.32, 0.24, 4, 5, 1, null, BARK.thin);
   const crown = { c: [0, 5.6, 0], r: [3.2, 3.8, 3.2] };
-  const paint = leafPaint('#33602f', '#55894a', 0.3, crown.c, crown.r, { jitter: 0.1, under: 0.65 });
+  const paint = leafPaint('#33602f', '#55894a', 0.3, crown.c, crown.r, { jitter: 0.1, under: 0.8 });
   b.blob(3.0, hi ? [8, 6] : 0, 0, 4.8, 0, { sy: 0.8, flat: 0.55 }, paint);
   b.blob(2.3, hi ? [7, 5] : 0, 0.2, 6.9, -0.1, { sy: 0.95 }, paint);
   if (hi) {

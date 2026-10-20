@@ -22,7 +22,18 @@ const DUST = { path: '#fbf3df', plaza: '#f4efe4', sand: '#f0d4a4' };
 const GREENS = ['#6f9e3e', '#8cbc52', '#5c8a34', '#a4c862'];
 const SPARKS = ['#ffd54a', '#ff8ad8', '#fff7c0', '#7fe8ff', '#b4ff7a'];
 const PHYS_DT = 1 / 60;
-const SAY = { honk: ['Ciao!', 'Beep beep!', 'Ciao ciao!'], whoa: ['Whoa!', 'Oops!'], boost: ['Wheee!', 'Yay!'] };
+// Holding a steer button eases the cart down to this speed, so the turning circle fits inside a
+// 7-wide avenue (radius about 3.6 at the touch buttons' 0.88) and a U-turn is easy.
+const TURN_SPEED = { easy: 5.2, free: 7 };
+const STUCK_WINDOW = 9; // positions kept for the "getting nowhere" test, one every 0.5 s (4 s)
+// What the family shouts, in the player's language (the HUD already says "Oops!" on a bump).
+const SAY = {
+  en: { honk: ['Hello!', 'Beep beep!', 'Ciao!'], whoa: ['Hold on!', 'Yikes!'], boost: ['Wheee!', 'Yay!'], done: ['Hooray!'] },
+  it: { honk: ['Ciao!', 'Bip bip!', 'Ciao ciao!'], whoa: ['Mamma mia!', 'Attenti!'], boost: ['Wiii!', 'Che bello!'], done: ['Evviva!'] },
+  fr: { honk: ['Coucou !', 'Tut tut !', 'Ciao !'], whoa: ['Oh là là !', 'Attention !'], boost: ['Youpi !', 'Wouhou !'], done: ['Hourra !'] },
+  es: { honk: ['¡Hola!', '¡Pi pi!', '¡Ciao!'], whoa: ['¡Madre mía!', '¡Cuidado!'], boost: ['¡Yupi!', '¡Wiii!'], done: ['¡Hurra!'] },
+  pt: { honk: ['Olá!', 'Bi-bi!', 'Ciao!'], whoa: ['Nossa!', 'Cuidado!'], boost: ['Iupi!', 'Eba!'], done: ['Viva!'] },
+};
 
 export async function create(ctx) {
   const { scene, terrain: T, colliders, events, quality } = ctx;
@@ -52,6 +63,7 @@ export async function create(ctx) {
     frozen: false, surface: 'path', surfPending: null, surfTimer: 0,
     lastGoodX: 0, lastGoodZ: 0, trail: [], trailTimer: 0,
     stuckT: 0, anchorX: 0, anchorZ: 0, rescueT: 0, rescueGo: -1, rescueTurn: 0, rescues: [],
+    winX: new Float32Array(STUCK_WINDOW), winZ: new Float32Array(STUCK_WINDOW), winN: 0, winI: 0, winT: 0,
     lastHit: { t: -9, nx: 0, nz: 0, dir: 1 }, bumpCool: 0, splashCool: 0,
     accel: 0, latAcc: 0, susY: 0, susV: 0, pitch: 0, pitchV: 0, roll: 0, rollV: 0,
     spin: 0, emitAcc: 0, sparkAcc: 0, lookTimer: 0, look: null, titleWave: 3,
@@ -62,6 +74,8 @@ export async function create(ctx) {
   const basis = new THREE.Matrix4();
   const tmp = new THREE.Vector3();
   const hitCircles = HIT_OFFSETS.map(() => ({ x: 0, z: 0, r: HIT_R }));
+  const lookAt = { x: 0, z: 0 };
+  const frame = { dt: 0, t: 0, steer: 0, speed: 0, accel: 0, latAcc: 0, frozen: false, look: null, rough: 0 };
   const rnd = ctx.rng('cart-fx');
 
   function surfaceAt(x, z) { return SURF_TYPE[T.surfaceAt(x, z)] || null; }
@@ -109,15 +123,19 @@ export async function create(ctx) {
 
   function whoa() {
     riders.act('whoa', ctx.time, 0.9);
-    say(pick(SAY.whoa));
+    say(pick('whoa'));
   }
 
-  // A speech bubble above a random rider.
+  // A speech bubble beside a random rider, on that rider's side of the cart (clear of the guide
+  // arrow floating above the roof).
   function say(text) {
     const p = riderList[(rnd() * riderList.length) | 0].bones.pelvis.position;
-    bubble.say(text, p.x * 0.5, p.z);
+    bubble.say(text, p.x < 0 ? -1 : 1, p.z);
   }
-  function pick(list) { return list[(rnd() * list.length) | 0]; }
+  function pick(kind) {
+    const list = (SAY[ctx.game?.settings?.lang] || SAY.en)[kind];
+    return list[(rnd() * list.length) | 0];
+  }
 
   // ---------------- physics (fixed 60 Hz sub-steps)
   function physicsStep(h) {
@@ -132,10 +150,13 @@ export async function create(ctx) {
       if (st.speed > 0.25) st.speed = Math.max(0, st.speed - (6 + 14 * brk) * h);
       else st.speed = Math.max(-4.5 * brk, st.speed - 5 * h);
     } else if (thr > 0.02) {
-      const target = maxV * (0.4 + 0.6 * thr);
+      let target = maxV * (0.4 + 0.6 * thr);
+      // cornering: a held steer button eases off the gas, so the cart turns inside the avenue
+      const turn = clamp((Math.abs(st.steer) - 0.3) / 0.5, 0, 1);
+      if (turn > 0) target = Math.min(target, maxV + ((g?.settings?.easy ? TURN_SPEED.easy : TURN_SPEED.free) - maxV) * turn);
       if (st.speed < 0) st.speed = Math.min(0, st.speed + 10 * h);
       else if (st.speed < target) st.speed = Math.min(target, st.speed + (3.5 + 5 * thr + (g?.boosting ? 4 : 0)) * (1 - 0.45 * st.speed / maxV) * h);
-      else st.speed = Math.max(target, st.speed - 4 * h);
+      else st.speed = Math.max(target, st.speed - (4 + 8 * turn) * h);
     } else {
       const d = (1.8 + 0.07 * Math.abs(st.speed)) * h;
       st.speed = Math.abs(st.speed) <= d ? 0 : st.speed - Math.sign(st.speed) * d;
@@ -143,7 +164,7 @@ export async function create(ctx) {
 
     // speed-sensitive steering: tight at walking pace, calm at full speed, never twitchy
     const av = Math.abs(st.speed);
-    const yawMax = Math.min(av / 3.0, 1.8 / (1 + 0.045 * av));
+    const yawMax = Math.min(av / 2.8, 1.9 / (1 + 0.03 * av));
     let targetYaw = -st.steer * yawMax * Math.sign(st.speed);
     if (st.rescueT > 0) targetYaw = st.rescueTurn * 1.2;
     st.yawRate += (targetYaw - st.yawRate) * (1 - Math.exp(-h * 9));
@@ -197,10 +218,22 @@ export async function create(ctx) {
   }
 
   // Stuck against something while the player keeps pushing: back off (or pull away) and turn.
-  // Wedged three times in a row: hop back to the last safe spot on an avenue.
+  // Wedged three times in a row, or pushing for 4 s while scraping to and fro in the same spot
+  // (a hut in the inside of a bend): hop back to the last safe spot on an avenue, facing the route.
   function watchStuck(dt) {
     const inp = ctx.input;
     const pushing = (inp.throttle > 0.2 || inp.brake > 0.2) && !st.frozen && ctx.game?.state === 'playing';
+    if (!pushing || st.rescueT > 0) st.winN = 0;
+    else if ((st.winT -= dt) <= 0) {
+      st.winT = 0.5;
+      st.winX[st.winI] = st.x; st.winZ[st.winI] = st.z;
+      st.winI = (st.winI + 1) % STUCK_WINDOW; // now the oldest sample
+      st.winN = Math.min(STUCK_WINDOW, st.winN + 1);
+      if (st.winN === STUCK_WINDOW && ctx.time - st.lastHit.t < 2 && Math.hypot(st.x - st.winX[st.winI], st.z - st.winZ[st.winI]) < 3) {
+        hopBack();
+        return;
+      }
+    }
     if (!pushing || st.rescueT > 0 || Math.hypot(st.x - st.anchorX, st.z - st.anchorZ) > 0.8) {
       st.anchorX = st.x; st.anchorZ = st.z; st.stuckT = 0;
       return;
@@ -212,11 +245,8 @@ export async function create(ctx) {
     const now = ctx.time;
     st.rescues = st.rescues.filter((t) => now - t < 10);
     st.rescues.push(now);
-    if ((st.rescues.length >= 3 || !recentHit) && st.trail.length) {
-      st.rescues = [];
-      const p = st.trail[Math.max(0, st.trail.length - 3)];
-      api.reset(p.x, p.z, p.heading);
-      sparkleBurst();
+    if (st.rescues.length >= 3 || !recentHit) {
+      hopBack();
       return;
     }
     const { nx, nz, dir } = st.lastHit;
@@ -225,6 +255,24 @@ export async function create(ctx) {
     st.rescueGo = -dir;
     st.rescueTurn = (fx * nz - fz * nx > 0 ? -1 : 1) * (dir > 0 ? 1 : -1);
     st.rescueT = 0.9;
+  }
+
+  function hopBack() {
+    st.rescues = [];
+    st.winN = 0;
+    if (!st.trail.length) return;
+    const p = st.trail[Math.max(0, st.trail.length - 3)];
+    api.reset(p.x, p.z, routeHeading(p.x, p.z) ?? p.heading);
+    sparkleBurst();
+  }
+
+  // Heading along the guide's route to the next stop from (x, z), or null.
+  function routeHeading(x, z) {
+    const next = ctx.game?.state === 'playing' ? ctx.game.nextStop?.() : null;
+    const pts = next && ctx.modules?.guide?.findRoute?.(x, z, next.spotX, next.spotZ);
+    if (!pts || pts.length < 2) return null;
+    const p = pts.find((q) => Math.hypot(q[0] - x, q[1] - z) > 6) || pts[pts.length - 1];
+    return Math.hypot(p[0] - x, p[1] - z) > 0.5 ? Math.atan2(p[0] - x, p[1] - z) : null;
   }
 
   // ---------------- per-frame helpers
@@ -385,7 +433,9 @@ export async function create(ctx) {
     const g = ctx.game;
     if (g?.state === 'stop' || g?.state === 'finished') {
       const c = ctx.camera.position;
-      st.look = { x: (c.x - root.position.x) * side.x + (c.z - root.position.z) * side.z, z: (c.x - root.position.x) * fwd.x + (c.z - root.position.z) * fwd.z };
+      lookAt.x = (c.x - root.position.x) * side.x + (c.z - root.position.z) * side.z;
+      lookAt.z = (c.x - root.position.x) * fwd.x + (c.z - root.position.z) * fwd.z;
+      st.look = lookAt;
       return;
     }
     st.lookTimer -= dt;
@@ -396,15 +446,17 @@ export async function create(ctx) {
     if (!s) return;
     const dx = s.x - st.x, dz = s.z - st.z;
     if (dx * dx + dz * dz > 50 * 50) return;
-    st.look = { x: dx * side.x + dz * side.z, z: dx * fwd.x + dz * fwd.z };
+    lookAt.x = dx * side.x + dz * side.z;
+    lookAt.z = dx * fwd.x + dz * fwd.z;
+    st.look = lookAt;
   }
 
   // ---------------- events
-  events.on('honk', () => { riders.act('wave', ctx.time, 1.8); say(pick(SAY.honk)); });
+  events.on('honk', () => { riders.act('wave', ctx.time, 1.8); say(pick('honk')); });
   events.on('stopReached', () => riders.act('cheer', ctx.time, 2.6));
   events.on('medal', () => riders.act('cheer', ctx.time, 3));
-  events.on('tourComplete', () => { riders.act('cheer', ctx.time, 4.5); say('Evviva!'); });
-  events.on('boost', (e) => { if (e.on) { riders.act('cheer', ctx.time, 1.3); say(pick(SAY.boost)); } });
+  events.on('tourComplete', () => { riders.act('cheer', ctx.time, 4.5); say(pick('done')); });
+  events.on('boost', (e) => { if (e.on) { riders.act('cheer', ctx.time, 1.3); say(pick('boost')); } });
   events.on('collect', () => {
     const others = riderList.filter((r) => !r.driver);
     riders.act('cheer', ctx.time, 0.9, [others[(rnd() * others.length) | 0].idx]);
@@ -423,7 +475,7 @@ export async function create(ctx) {
     get driver() { return riders.driverIndex; },
 
     reset(x, z, heading = 0) {
-      Object.assign(st, { x, z, heading, speed: 0, yawRate: 0, extX: 0, extZ: 0, stuckT: 0, rescueT: 0, rescues: [], anchorX: x, anchorZ: z, accel: 0, latAcc: 0, susY: 0, susV: 0 });
+      Object.assign(st, { x, z, heading, speed: 0, yawRate: 0, extX: 0, extZ: 0, stuckT: 0, rescueT: 0, rescues: [], winN: 0, anchorX: x, anchorZ: z, accel: 0, latAcc: 0, susY: 0, susV: 0 });
       resolve(4);
       st.lastGoodX = st.x; st.lastGoodZ = st.z;
       st.trail = [{ x: st.x, z: st.z, heading: st.heading }];
@@ -483,10 +535,9 @@ export async function create(ctx) {
           riders.act('wave', t, 1.6, [(rnd() * riderList.length) | 0]);
         }
       }
-      riders.update({
-        dt, t, steer: st.steer, speed: st.speed, accel: st.accel, latAcc: st.latAcc,
-        frozen: st.frozen || g?.state !== 'playing', look: st.look, rough,
-      });
+      frame.dt = dt; frame.t = t; frame.steer = st.steer; frame.speed = st.speed; frame.accel = st.accel;
+      frame.latAcc = st.latAcc; frame.frozen = st.frozen || g?.state !== 'playing'; frame.look = st.look; frame.rough = rough;
+      riders.update(frame);
       if (!paused) emit(dt);
       particles.update(dt, t);
       bubble.update(dt);

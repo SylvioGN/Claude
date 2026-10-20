@@ -1,16 +1,14 @@
 // Famous buildings of the city edge that get more than a footprint: Villa Medici with its twin
-// turrets, the white Galleria Nazionale d'Arte Moderna and Trinità dei Monti above the Spanish Steps.
+// turrets and Trinità dei Monti above the Spanish Steps.
 import * as THREE from 'three';
 import { mat, addBuilding } from './buildings.js';
-import { statue } from './popolo.js';
 
-const TRAV = '#ece4d2', TRAV_SHADE = '#d9cfba', MARBLE = '#f3f0e8', LEAD = '#8f989b', BRONZE = '#5b4a33';
+const TRAV = '#ece4d2', TRAV_SHADE = '#d9cfba', LEAD = '#8f989b', BRONZE = '#5b4a33';
 
 export function buildLandmarks(ctx, chunks, specials) {
   const H = ctx.terrain.heightAt;
   for (const sp of specials) {
     if (sp.kind === 7) villaMedici(ctx, chunks.at(sp.cx, sp.cz), sp.ring, H);
-    if (sp.kind === 6) gnam(ctx, chunks.at(sp.cx, sp.cz), sp.ring, H);
   }
   trinita(chunks.at(-60, 400), H);
 }
@@ -33,38 +31,6 @@ function villaMedici(ctx, cb, ring, H) {
     cb.geo(new THREE.CylinderGeometry(0.35, 0.45, 1.4, 6), mat(x, y0 + h + 6.6, z), TRAV);
   }
   ctx.reserve({ ring });
-}
-
-function gnam(ctx, cb, ring, H) {
-  addBuilding(cb, { ring, floors: 2, floorH: 6.2, facade: 'classic', wall: '#f2ede3', roof: '#c9bca6', roofType: 'flat', heightAt: H, sink: 0.6 });
-  ctx.colliders.addRing(ring, 'building', { name: 'Galleria Nazionale d\'Arte Moderna' });
-  // central entrance on Viale delle Belle Arti: portico, attic with bronze groups, wide steps
-  const fx = -113.0, fz = -279.0;
-  const dirx = 0.505, dirz = -0.864; // facing the avenue
-  const ry = Math.atan2(dirx, dirz);
-  const c = Math.cos(ry), s = Math.sin(ry);
-  const P = (u, w) => [fx + u * c + w * s, fz - u * s + w * c];
-  const y = H(fx, fz);
-  for (let k = 0; k < 4; k++) {
-    const [sx, sz] = P(0, 5.3 - k * 1.1);
-    cb.geo(new THREE.BoxGeometry(22 - k * 0.6, 0.5 * (k + 1), 1.2), mat(sx, y + 0.25 * (k + 1), sz, ry), TRAV_SHADE);
-  }
-  for (const u of [-7.5, -4.5, -1.5, 1.5, 4.5, 7.5]) {
-    const [cx, cz] = P(u, 1.2);
-    cb.geo(new THREE.CylinderGeometry(0.7, 0.78, 10.5, 10), mat(cx, y + 6.6, cz), MARBLE);
-  }
-  const [ex, ez] = P(0, 0.6);
-  cb.geo(new THREE.BoxGeometry(18.5, 1.6, 3.0), mat(ex, y + 12.6, ez, ry), TRAV);
-  cb.geo(new THREE.BoxGeometry(12, 3.6, 2.4), mat(ex, y + 15.2, ez, ry), TRAV, 'ashlar', [3.6, 0.9]);
-  for (const u of [-4.5, 0, 4.5]) {
-    const [gx, gz] = P(u, 0.6);
-    cb.geo(new THREE.BoxGeometry(2.2, 1.4, 1.2), mat(gx, y + 17.7, gz, ry), BRONZE);
-    cb.geo(new THREE.ConeGeometry(0.6, 2.0, 5), mat(gx, y + 19.2, gz), BRONZE);
-  }
-  for (const u of [-9.5, 9.5]) {
-    const [sx, sz] = P(u, 2.4);
-    statue(cb, sx, y + 0.9, sz, ry, 1.5);
-  }
 }
 
 // Trinità dei Monti: twin bell towers over the Spanish Steps, facing west.

@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import {
   C, FrameBuilder, UVBuilder, statue, bust, balustrade, run, beam, pottedCitrus, topiary, halfDisc,
-  hipRoofGeometry, offsetRing, railingMaterial,
+  hipRoofGeometry, offsetRing, railingMaterial, photoView,
 } from './kit.js';
 
 // ---- facade ornaments; (x, z) is a point on the wall surface, ry turns +z to the wall normal
@@ -72,6 +72,57 @@ function reliefAt(gb, x, y, z, ry, w, h, rnd) {
 function pilaster(gb, x, y0, y1, z, ry, w = 0.5) {
   const [ox, oz] = outward(ry, 0.07);
   gb.box(w, y1 - y0, 0.14, C.trim, x + ox, (y0 + y1) / 2, z + oz, ry);
+}
+
+// Keeps the part of polygon `poly` where x * nx + z * nz >= c.
+function clipHalfPlane(poly, nx, nz, c) {
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    const dp = p[0] * nx + p[1] * nz - c, dq = q[0] * nx + q[1] * nz - c;
+    if (dp >= 0) out.push(p);
+    if ((dp >= 0) !== (dq >= 0)) { const t = dp / (dp - dq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); }
+  }
+  return out;
+}
+
+// The part of segment a-b outside the circle (cx, cz, r), or null; a segment that dips into the
+// circle without ending there is kept whole.
+function outsideCircle(a, b, cx, cz, r) {
+  const ina = Math.hypot(a[0] - cx, a[1] - cz) < r, inb = Math.hypot(b[0] - cx, b[1] - cz) < r;
+  if (!ina && !inb) return [a, b];
+  if (ina && inb) return null;
+  const [p, q] = ina ? [b, a] : [a, b];  // p outside, q inside
+  const dx = q[0] - p[0], dz = q[1] - p[1], ox = p[0] - cx, oz = p[1] - cz;
+  const A = dx * dx + dz * dz, B = 2 * (ox * dx + oz * dz), Cc = ox * ox + oz * oz - r * r;
+  const t = (-B - Math.sqrt(Math.max(0, B * B - 4 * A * Cc))) / (2 * A);
+  return [p, [p[0] + dx * t, p[1] + dz * t]];
+}
+
+// Cuts a flower bed back so it stays `lane` clear of the centre line of every walk segment that
+// comes closer, keeping the side the bed's middle is on. Returns null when too little is left.
+function clipToLanes(ring, walks, lane, geo) {
+  const [cx, cz] = geo.ringCentroid(ring);
+  const edgeDist = (poly, a, b) => {
+    let d = Infinity;
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length];
+      d = Math.min(d, geo.segDist2(p[0], p[1], a[0], a[1], b[0], b[1]), geo.segDist2(a[0], a[1], p[0], p[1], q[0], q[1]), geo.segDist2(b[0], b[1], p[0], p[1], q[0], q[1]));
+    }
+    return geo.pointInRing(a[0], a[1], poly) ? 0 : Math.sqrt(d);
+  };
+  let poly = ring;
+  for (const [a, b] of walks) {
+    if (edgeDist(poly, a, b) >= lane) continue;
+    let nx = a[1] - b[1], nz = b[0] - a[0];
+    const L = Math.hypot(nx, nz);
+    if (L < 1e-6) continue;
+    nx /= L; nz /= L;
+    if ((cx - a[0]) * nx + (cz - a[1]) * nz < 0) { nx = -nx; nz = -nz; }
+    poly = clipHalfPlane(poly, nx, nz, a[0] * nx + a[1] * nz + lane);
+    if (poly.length < 3) return null;
+  }
+  return Math.abs(geo.ringArea(poly)) > 3 ? poly : null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -213,11 +264,19 @@ export function buildGalleriaComplex(ctx, rnd) {
     else windowAt(gb, bx, Y.g2 + 0.45, BZ, ry, 0.8, 0.85, 0);
   }
   for (const px of [-15.35, -12.8, -9.6, -6.4, -3.2, 0, 3.2, 6.4, 9.6, 12.8, 15.35]) pilaster(gb, px, Y.floor, Y.cor, BZ, Math.PI, 0.45);
-  // steps down from the garden doors
-  gb.box(3.6, Y.floor, 1.4, C.plinth, 0, Y.floor / 2, BZ - 0.7);
-  for (let k = 1; k <= 4; k++) {
-    const h = Y.floor - k * 0.4;
-    gb.box(3.6, h, 0.46, C.stone, 0, h / 2, BZ - 1.4 - (k - 0.5) * 0.45);
+  // steps down from the garden door: a landing and two short flights along the back wall, which
+  // leave the walk round the flower garden open
+  const RS = { landW: 1.8, depth: 1.4, tread: 0.5, steps: 8 };
+  {
+    const { landW, depth, tread, steps } = RS, rise = Y.floor / steps;
+    gb.box(2 * landW, Y.floor, depth, C.plinth, 0, Y.floor / 2, BZ - depth / 2);
+    balustrade(gb, -landW, BZ - depth + 0.1, landW, BZ - depth + 0.1, Y.floor, 0.75, 0.3);
+    for (const sx of [-1, 1]) {
+      for (let k = 1; k < steps; k++) {
+        const h = Y.floor - k * rise;
+        gb.box(tread, h, depth, C.stone, sx * (landW + (k - 0.5) * tread), h / 2, BZ - depth / 2);
+      }
+    }
   }
 
   // roof balustrade with statues against the sky
@@ -236,44 +295,40 @@ export function buildGalleriaComplex(ctx, rnd) {
     statue(gb, sx, Y.roof + 1.0, sz, ry, 0.95, C.marble, i);
   });
 
-  // Ponzio's double staircase: two curved flights embracing the forecourt, meeting on a landing
-  // in front of the loggia; the museum entrance is underneath.
+  // Ponzio's double staircase: two straight flights along the main front climb from either side
+  // to a landing before the loggia, the museum entrance underneath. It hugs the wall so that
+  // Viale dell'Uccelliera, which passes in front of the facade, stays open.
+  const ST = { landW: 2.5, landD: 1.6, flightD: 1.45, tread: 0.56, steps: 9 };
   {
-    const R = 10.9, OZ = 22, steps = 9, rise = Y.floor / steps;
-    const aTop = Math.asin(2.4 / R), aBot = Math.asin(7.6 / R), da = (aBot - aTop) / steps;
-    gb.box(5.0, Y.floor, 1.9, C.plinth, 0, Y.floor / 2 - 0.05, FZ + 0.95);
-    gb.box(5.3, 0.16, 2.1, C.trim, 0, Y.floor + 0.02, FZ + 0.95);
-    gb.box(1.5, 1.45, 0.08, C.trim, 0, 0.72, FZ + 1.93);
-    gb.box(1.2, 1.3, 0.08, C.door, 0, 0.65, FZ + 1.96);
-    gb.place(halfDisc(0.6, 0.08, 8), C.door, 0, 1.3, FZ + 1.96);
-    balustrade(gb, -1.2, FZ + 1.85, 1.2, FZ + 1.85, Y.floor + 0.1, 0.75, 0.3);
-    gb.box(0.6, 0.6, 0.6, C.trim, 0, Y.floor + 0.4, FZ + 1.6);
-    gb.cyl(0.45, 0.22, 0.55, 8, C.marble, 0, Y.floor + 1.0, FZ + 1.6);
-    gb.sphere(0.32, 1, C.marble, 0, Y.floor + 1.4, FZ + 1.6, 1, 0.6, 1);
+    const { landW, landD, flightD, tread, steps } = ST, rise = Y.floor / steps, zl = FZ + landD;
+    gb.box(2 * landW, Y.floor, landD, C.plinth, 0, Y.floor / 2 - 0.05, FZ + landD / 2);
+    gb.box(2 * landW + 0.3, 0.16, landD + 0.2, C.trim, 0, Y.floor + 0.02, FZ + landD / 2);
+    gb.box(1.5, 1.45, 0.08, C.trim, 0, 0.72, zl + 0.03);
+    gb.box(1.2, 1.3, 0.08, C.door, 0, 0.65, zl + 0.06);
+    gb.place(halfDisc(0.6, 0.08, 8), C.door, 0, 1.3, zl + 0.06);
+    balustrade(gb, -landW, zl - 0.1, landW, zl - 0.1, Y.floor + 0.1, 0.75, 0.3);
     for (const sx of [-1, 1]) {
-      const posts = { in: [], out: [] };
-      for (let k = 0; k < steps; k++) {
-        const a = aBot - (k + 0.5) * da, top = (k + 1) * rise;
-        const px = sx * R * Math.sin(a), pz = OZ - R * Math.cos(a);
-        gb.box(R * da * 1.08, top, 1.5, C.stone, px, top / 2, pz, -sx * a);
-        gb.box(R * da * 1.08, 0.06, 1.56, C.trim, px, top, pz, -sx * a);
-        for (const [key, rr] of [['in', R - 0.82], ['out', R + 0.82]]) {
-          posts[key].push([sx * rr * Math.sin(a), top + 0.75, OZ - rr * Math.cos(a)]);
-        }
+      // urn on the landing corner, then the flight down and away from the middle
+      gb.box(0.5, 0.6, 0.5, C.trim, sx * (landW - 0.2), Y.floor + 0.4, zl - 0.2);
+      gb.cyl(0.38, 0.2, 0.5, 8, C.marble, sx * (landW - 0.2), Y.floor + 0.95, zl - 0.2);
+      gb.sphere(0.28, 1, C.marble, sx * (landW - 0.2), Y.floor + 1.32, zl - 0.2, 1, 0.6, 1);
+      const posts = [];
+      for (let k = 1; k < steps; k++) {
+        const top = Y.floor - k * rise, x = sx * (landW + (k - 0.5) * tread);
+        gb.box(tread, top, flightD, C.stone, x, top / 2, FZ + flightD / 2);
+        gb.box(tread + 0.02, 0.06, flightD + 0.06, C.trim, x, top, FZ + flightD / 2);
+        posts.push([x, top + 0.75, FZ + flightD - 0.1]);
       }
-      for (const key of ['in', 'out']) {
-        const pts = posts[key];
-        for (let i = 0; i < pts.length; i++) {
-          const p = pts[i];
-          gb.cyl(0.07, 0.1, 0.7, 5, C.trim, p[0], p[1] - 0.38, p[2]);
-          if (i) beam(gb, pts[i - 1], p, 0.3, 0.12, C.trim);
-        }
-        const b = pts[0];
-        gb.box(0.4, 1.0, 0.4, C.trim, b[0], b[1] - 0.6, b[2]);
-        gb.sphere(0.2, 0, C.marble, b[0], b[1] + 0.05, b[2]);
+      for (let i = 0; i < posts.length; i++) {
+        const p = posts[i];
+        gb.cyl(0.07, 0.1, 0.7, 5, C.trim, p[0], p[1] - 0.38, p[2]);
+        if (i) beam(gb, posts[i - 1], p, 0.3, 0.12, C.trim);
       }
+      const b = posts[posts.length - 1];
+      gb.box(0.4, 1.0, 0.4, C.trim, b[0], b[1] - 0.6, b[2]);
+      gb.sphere(0.2, 0, C.marble, b[0], b[1] + 0.05, b[2]);
     }
-    for (const sx of [-1, 1]) balustrade(gb, sx * 2.5, FZ + 0.05, sx * TX, FZ + 0.05, Y.floor + 0.12, 0.75, 0.4);
+    for (const sx of [-1, 1]) balustrade(gb, sx * landW, FZ + 0.05, sx * TX, FZ + 0.05, Y.floor + 0.12, 0.75, 0.4);
   }
 
   // forecourt: two clipped box parterres either side of the approach avenue
@@ -298,30 +353,47 @@ export function buildGalleriaComplex(ctx, rnd) {
   }
 
   // ---------------------------------------------------------------- rear flower garden
-  for (const l of MAP.LAWNS) {
-    if (l.k !== 'flowers') continue;
-    const [lx, lz] = toLocal(l.r[0][0], l.r[0][1]);
-    if (Math.abs(lx) > 30 || lz > 0 || lz < -45) continue;
-    const ring = l.r.map(([x, z]) => toLocal(x, z));
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i], b = ring[(i + 1) % ring.length];
-      run(gb, a[0], a[1], b[0], b[1], gy(a[0], a[1]) - 0.15, 0.5, 0.32, C.box);
-    }
-    colliders.addRing(l.r, 'hedge', null, 0.2);
-  }
   // the round fountain in the middle of the garden gets a vase and a little jet
   const rearFountain = MAP.WATER.find((w) => {
     const [u, v] = toLocal(...ctx.geo.ringCentroid(w.r));
     return w.k === 'fountain' && Math.abs(u) < 8 && v < -12 && v > -30;
   });
   let rearJet = null;
+  const [fx, fz] = rearFountain ? ctx.geo.ringCentroid(rearFountain.r) : toWorld(0, -21);
   if (rearFountain) {
-    const [cxw, czw] = ctx.geo.ringCentroid(rearFountain.r);
-    const [u, v] = toLocal(cxw, czw), h = gy(u, v);
+    const [u, v] = toLocal(fx, fz), h = gy(u, v);
     gb.cyl(0.35, 0.55, 1.0, 8, C.stone, u, h + 0.5, v);
     gb.cyl(1.1, 0.4, 0.4, 10, C.stone, u, h + 1.15, v);
     gb.cyl(0.95, 0.95, 0.05, 10, C.water, u, h + 1.33, v);
-    rearJet = { x: cxw, y: y0 + h + 1.35, z: czw, r: 0.15, v: 3.2 };
+    rearJet = { x: fx, y: y0 + h + 1.35, z: fz, r: 0.15, v: 3.2 };
+  }
+  // The mapped beds of Piazzale Scipione Borghese reach right up to its walks, which are avenues
+  // here. Each bed is cut back to leave a drivable lane along the walk round the garden, the two
+  // walks across it and the outer ends of the long axis, then edged with box. Within GARDEN of
+  // the fountain the inner beds stay whole and its little walks stay garden paths, and so does
+  // the walk hugging the back wall, which is too narrow for the cart anyway.
+  const GARDEN = 10.5;
+  const walks = [];
+  for (const p of MAP.PATHS) {
+    for (let i = 1; i < p.p.length; i++) {
+      const piece = outsideCircle(p.p[i - 1], p.p[i], fx, fz, GARDEN);
+      if (!piece) continue;
+      const mx = (piece[0][0] + piece[1][0]) / 2, mz = (piece[0][1] + piece[1][1]) / 2;
+      if (ctx.geo.distToRingEdge(mx, mz, A.footprint) > 2) walks.push(piece);
+    }
+  }
+  for (const l of MAP.LAWNS) {
+    if (l.k !== 'flowers') continue;
+    const [lx, lz] = toLocal(l.r[0][0], l.r[0][1]);
+    if (Math.abs(lx) > 30 || lz > 0 || lz < -45) continue;
+    const bed = clipToLanes(l.r, walks, 1.75, ctx.geo);
+    if (!bed) continue;
+    const ring = bed.map(([x, z]) => toLocal(x, z));
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      run(gb, a[0], a[1], b[0], b[1], gy(a[0], a[1]) - 0.15, 0.5, 0.32, C.box);
+    }
+    colliders.addRing(bed, 'hedge', null, 0.2);
   }
 
   // ---------------------------------------------------------------- Giardini Segreti
@@ -511,8 +583,12 @@ export function buildGalleriaComplex(ctx, rnd) {
   // ---------------------------------------------------------------- colliders & reservations
   frameMain();
   colliders.addRing(A.footprint, 'building');
-  colliders.addBox(...toWorld(0, 12.6), 16.4, 4.8, ang, 'building');
-  colliders.addBox(...toWorld(0, BZ - 1.6), 3.8, 3.2, ang, 'building');
+  colliders.addBox(...toWorld(0, FZ + ST.landD / 2), 2 * (ST.landW + (ST.steps - 1) * ST.tread) + 0.4, ST.landD, ang, 'building');
+  colliders.addBox(...toWorld(0, BZ - RS.depth / 2), 2 * (RS.landW + (RS.steps - 1) * RS.tread), RS.depth, ang, 'building');
+  // the postcard from Piazzale del Museo Borghese: the cart on the approach between the box
+  // parterres, the main front with its double staircase and loggia behind
+  const dir = (u, v) => [u * ca - v * sa, u * sa + v * ca];
+  photoView(ctx, 'galleria', { spot: toWorld(-1, 24), face: dir(-0.89, 0.45), cam: [...toWorld(-3, 38), 4.5], look: [...toWorld(-0.5, 8), 6.5], far: toWorld(0, 12), wide: 9 });
   ctx.reserve({ ring: offsetRing(plinth, 2).map(([u, v]) => toWorld(u, v)) });
   ctx.reserve({ ring: [[-9, FZ], [9, FZ], [9, 15.5], [-9, 15.5]].map(([u, v]) => toWorld(u, v)) });
 

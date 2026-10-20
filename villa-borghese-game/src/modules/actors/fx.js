@@ -5,6 +5,7 @@
 //  * leashes: one LineSegments for dog leads
 //  * speech bubbles: text sprites ("Mamma mia!", "Ciao!") shown for a moment above people
 import * as THREE from 'three';
+import { uploadFirst } from './rig.js';
 
 export const SPR = { STAR: 0, DOT: 1, HEART: 2, PLUS: 3 };
 
@@ -102,13 +103,21 @@ export function createFx(ctx, scene) {
   let alive = 0;
   let n = 0;
   const _c = new THREE.Color();
+  // CSS colour -> [r, g, b], converted once (sparkles ask for the same few colours every frame)
+  const rgbCache = new Map();
+  const rgb = (color) => {
+    let c = rgbCache.get(color);
+    if (!c) { _c.set(color); c = [_c.r, _c.g, _c.b]; rgbCache.set(color, c); }
+    return c;
+  };
 
   function spawn(x, y, z, vxi, vyi, vzi, lifeS, s0, s1, color, sprite, g = 0, dr = 0) {
     if (alive >= MAXP) return;
     const i = alive++;
     px[i] = x; py[i] = y; pz[i] = z; vx[i] = vxi; vy[i] = vyi; vz[i] = vzi;
     life[i] = lifeS; maxLife[i] = lifeS; size0[i] = s0; size1[i] = s1; grav[i] = g; drag[i] = dr; spr[i] = sprite;
-    _c.set(color); cr[i] = _c.r; cg[i] = _c.g; cb[i] = _c.b;
+    const c = rgb(color);
+    cr[i] = c[0]; cg[i] = c[1]; cb[i] = c[2];
   }
 
   function put(x, y, z, r, g, b, size, sprite, alpha) {
@@ -205,8 +214,8 @@ export function createFx(ctx, scene) {
     spawn,
     // immediate-mode point for this frame only
     sparkle(x, y, z, size, color, alpha = 1, sprite = SPR.STAR) {
-      _c.set(color);
-      put(x, y, z, _c.r, _c.g, _c.b, size, sprite, alpha);
+      const c = rgb(color);
+      put(x, y, z, c[0], c[1], c[2], size, sprite, alpha);
     },
     sparkleRGB(x, y, z, size, r, g, b, alpha = 1, sprite = SPR.STAR) { put(x, y, z, r, g, b, size, sprite, alpha); },
     shadow(x, y, z, r) {
@@ -244,16 +253,16 @@ export function createFx(ctx, scene) {
       geo.setDrawRange(0, n);
       points.visible = n > 0;
       if (n) {
-        aPos.needsUpdate = true; aCol.needsUpdate = true; aMisc.needsUpdate = true;
+        uploadFirst(aPos, n); uploadFirst(aCol, n); uploadFirst(aMisc, n);
         const h = renderer.getDrawingBufferSize(_v2).y;
         mat.uniforms.uScale.value = h / (2 * Math.tan((camera.fov * Math.PI) / 360));
       }
       shadows.count = ns;
       shadows.visible = ns > 0;
-      if (ns) shadows.instanceMatrix.needsUpdate = true;
+      if (ns) uploadFirst(shadows.instanceMatrix, ns);
       lGeo.setDrawRange(0, nl * 2);
       leashes.visible = nl > 0;
-      if (nl) lAttr.needsUpdate = true;
+      if (nl) uploadFirst(lAttr, nl * 2);
       // bubbles pop in, wobble and fade
       for (let i = active.length - 1; i >= 0; i--) {
         const b = active[i];

@@ -300,3 +300,30 @@ export function rider(f, c) {
     f.beam([s * 0.1, 2.02, 0.54], [s * 0.1, 1.98, 1.42], 0.02, 0.02, '#3b2a1c');
   }
 }
+
+// Holiday snapshot for a tour stop: the core parks the cart on the stop's spot facing
+// view.heading, and the photo camera frames it from view.cam towards view.look.
+// The camera stands `dist` from the landmark at (x, z) in direction `from` (a heading), `height`
+// above the ground; the cart waits `cart` in front of the camera, `side` to its right (negative:
+// left), turned `turn` from facing the camera. The camera aims `aimY` above the landmark's base
+// `y` and `aimSide` to the right. The ground between the camera and the landmark (`width`
+// across) is reserved so trees, props and pick-ups keep out of the picture.
+export function photoView(ctx, id, { x, z, y = ctx.terrain.heightAt(x, z), from, dist, height = 3.5, cart, side = 0, turn = 0.8, aimY = 2, aimSide = 0, width = 8 }) {
+  const stop = ctx.game?.stops?.find((s) => s.id === id);
+  if (!stop) return null;
+  const H = ctx.terrain.heightAt;
+  const ux = Math.sin(from), uz = Math.cos(from), rx = uz, rz = -ux;
+  const cx = x + ux * dist, cz = z + uz * dist;
+  const sx = cx - ux * cart + rx * side, sz = cz - uz * cart + rz * side;
+  Object.assign(stop, {
+    spotX: sx, spotZ: sz,
+    view: {
+      heading: Math.atan2(cx - sx, cz - sz) + turn,
+      cam: [cx, H(cx, cz) + height, cz],
+      look: [x + rx * aimSide, y + aimY, z + rz * aimSide],
+    },
+  });
+  const w0 = Math.abs(side) + 3.5, w1 = Math.max(width / 2, w0), bx = cx + ux * 2, bz = cz + uz * 2;
+  ctx.reserve({ ring: [[bx + rx * w0, bz + rz * w0], [x + rx * w1, z + rz * w1], [x - rx * w1, z - rz * w1], [bx - rx * w0, bz - rz * w0]] });
+  return stop;
+}

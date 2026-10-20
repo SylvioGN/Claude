@@ -1,7 +1,7 @@
 // Piazza del Popolo, below the Pincio terrace: the Flaminio obelisk with its four lion fountains,
 // the twin churches of Santa Maria dei Miracoli and in Montesanto, Porta del Popolo and Santa Maria
-// del Popolo, the two exedras with the Dea Roma and Neptune fountains, and the arcaded terraces
-// that hold up the Pincio. Positions are the real ones from OpenStreetMap (game units).
+// del Popolo, and the two exedras with the Neptune fountain. The Dea Roma fountain and the terraces
+// up the Pincio slope are landmarksPincio's. Positions are the real ones from OpenStreetMap.
 import * as THREE from 'three';
 import { mat, addBuilding } from './buildings.js';
 import { TILE } from './atlas.js';
@@ -28,7 +28,6 @@ export function buildPopolo(ctx, chunks) {
   portaDelPopolo(cb, H);
   santaMariaDelPopolo(cb, H, ctx);
   exedras(cb, H);
-  pincioTerraces(ctx, chunks);
 }
 
 // ---- the obelisk and its lions -------------------------------------------------------------
@@ -240,10 +239,8 @@ function exedras(cb, H) {
     // statues at the ends
     for (const p of [pts[0], pts[pts.length - 1]]) statue(cb, p[0], H(p[0], p[1]) + 4.0, p[1], 0, 1.4);
   }
-  // Fontana della Dea Roma: Roma between the Tiber and the Aniene, above a wide basin
-  fountain(cb, H, [-354.7, 126.4], Math.atan2(-1, 0.1), 'roma');
   // Fontana del Nettuno: Neptune with two tritons
-  fountain(cb, H, [-431.9, 151.1], Math.atan2(1, 0.05), 'nettuno');
+  neptune(cb, H, [-431.9, 151.1], Math.atan2(1, 0.05));
 }
 
 function exedraWall(cb, pts, H) {
@@ -259,7 +256,7 @@ function exedraWall(cb, pts, H) {
   }
 }
 
-function fountain(cb, H, [x, z], ry, kind) {
+function neptune(cb, H, [x, z], ry) {
   const y = H(x, z);
   const c = Math.cos(ry), s = Math.sin(ry);
   const P = (u, w) => [x + u * c + w * s, z - u * s + w * c];
@@ -270,71 +267,13 @@ function fountain(cb, H, [x, z], ry, kind) {
   // rocky base and the figures
   const [rx, rz] = P(0, 0.6);
   cb.geo(new THREE.DodecahedronGeometry(2.2, 0), mat(rx, y + 1.6, rz, ry, 1.4, 0.8, 0.9), '#d9d0bd');
-  if (kind === 'roma') {
-    const [sx, sz] = P(0, 0.3);
-    statue(cb, sx, y + 2.6, sz, ry, 1.6);
-    cb.geo(new THREE.ConeGeometry(0.35, 0.6, 6), mat(sx, y + 6.6, sz), MARBLE); // helmet crest
-    for (const u of [-2.6, 2.6]) {
-      const [gx, gz] = P(u, 1.2);
-      cb.geo(new THREE.CapsuleGeometry(0.55, 2.0, 2, 6), mat(gx, y + 2.1, gz, ry, 1, 1, 1, 0, Math.sign(u) * 1.2), MARBLE);
-      cb.geo(new THREE.IcosahedronGeometry(0.35, 0), mat(gx + Math.sign(u) * 0.9 * c, y + 2.8, gz - Math.sign(u) * 0.9 * s), MARBLE);
-    }
-  } else {
-    const [sx, sz] = P(0, 1.0);
-    statue(cb, sx, y + 2.3, sz, ry, 1.6);
-    cb.geo(new THREE.CylinderGeometry(0.06, 0.06, 4.2, 4), mat(sx + 0.7 * c, y + 4.6, sz - 0.7 * s), BRONZE); // trident
-    cb.geo(new THREE.ConeGeometry(0.25, 0.5, 3), mat(sx + 0.7 * c, y + 6.9, sz - 0.7 * s), BRONZE);
-    for (const u of [-1.9, 1.9]) {
-      const [gx, gz] = P(u, 2.0);
-      cb.geo(new THREE.CapsuleGeometry(0.4, 1.4, 2, 6), mat(gx, y + 1.9, gz, ry, 1, 1, 1, 0.5, Math.sign(u) * 0.6), MARBLE);
-      cb.geo(new THREE.ConeGeometry(0.4, 1.0, 6), mat(gx, y + 1.3, gz + 0.3, ry, 1, 1, 1, Math.PI / 2), '#9fb5b0'); // dolphin
-    }
-  }
-}
-
-// ---- the arcaded terraces under the Pincio -------------------------------------------------
-// The terrain drops 13 units from the Pincio to the piazza in a few metres; this hides the bank
-// behind a two-tier wall of arches and niches capped level with the terrace.
-function pincioTerraces(ctx, chunks) {
-  const H = ctx.terrain.heightAt;
-  const line = [[-340.6, 64], [-340.6, 108.8], [-333.8, 118.0], [-322.8, 132.6], [-318.6, 136.4]];
-  const back = [[-333.6, 64], [-333.6, 107.0], [-326.6, 116.2], [-316.2, 130.0], [-313.0, 133.6]];
-  const cb = chunks.at(-336, 100);
-  const top = line.map((p, i) => Math.max(H(back[i][0], back[i][1]), H(p[0], p[1])) + 0.15);
-  const bot = line.map((p) => H(p[0] - 6, p[1]) - 0.4);
-  let u = 0;
-  for (let i = 1; i < line.length; i++) {
-    const a = line[i - 1], b = line[i];
-    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    const nx = -(b[1] - a[1]) / L, nz = (b[0] - a[0]) / L; // faces the piazza (west / south-west)
-    const facing = [nx, 0, nz];
-    const ya = bot[i - 1], yb = bot[i];
-    const ta = top[i - 1], tb = top[i];
-    const ma = ya + (ta - ya) * 0.55, mb = yb + (tb - yb) * 0.55;
-    const du = L / TILE.arcade[0];
-    // lower tier: arcade (dark arches, the old loggia); upper tier: rusticated travertine
-    cb.quad([a[0], ya, a[1]], [b[0], yb, b[1]], [b[0], ma, b[1]], [a[0], ma, a[1]], TRAV, 'arcade',
-      [[u, 0], [u + du, 0], [u + du, (mb - yb) / 6.2], [u, (ma - ya) / 6.2]], false, facing);
-    cb.quad([a[0], ma, a[1]], [b[0], mb, b[1]], [b[0], tb, b[1]], [a[0], ta, a[1]], '#e6dcc6', 'ashlar',
-      [[u * 1.0, 0], [u + L / TILE.ashlar[0], 0], [u + L / TILE.ashlar[0], (tb - mb) / TILE.ashlar[1]], [u, (ta - ma) / TILE.ashlar[1]]], false, facing);
-    u += du;
-    // cornice between the tiers and along the top
-    const ry = Math.atan2(b[0] - a[0], b[1] - a[1]);
-    const cx = (a[0] + b[0]) / 2 + facing[0] * 0.3, cz = (a[1] + b[1]) / 2 + facing[2] * 0.3;
-    cb.geo(new THREE.BoxGeometry(0.9, 0.5, L + 0.6), mat(cx, (ma + mb) / 2, cz, ry), TRAV_SHADE);
-    cb.geo(new THREE.BoxGeometry(1.0, 0.6, L + 0.6), mat(cx, (ta + tb) / 2 - 0.2, cz, ry), TRAV);
-  }
-  // flat paved cap from the wall back to the terrace edge
-  const cap = [...line, ...back.slice().reverse()];
-  cb.flat(cap, 0, '#e3d8c2', 'cobbles', false, (x, z) => {
-    let best = 0, bd = Infinity;
-    line.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - z); if (d < bd) { bd = d; best = i; } });
-    back.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - z); if (d < bd) { bd = d; best = i; } });
-    return top[best];
-  });
-  // holm oaks and pines on the green bank further south
-  for (const [x, z, k] of [[-312, 146, 'holmOak'], [-306, 154, 'holmOak'], [-314, 158, 'umbrellaPine'], [-302, 164, 'holmOak'],
-    [-345, 66, 'holmOak'], [-346, 78, 'cypress'], [-346, 98, 'cypress'], [-300, 172, 'umbrellaPine']]) {
-    ctx.plant(k, x, z, { scale: 1 });
+  const [sx, sz] = P(0, 1.0);
+  statue(cb, sx, y + 2.3, sz, ry, 1.6);
+  cb.geo(new THREE.CylinderGeometry(0.06, 0.06, 4.2, 4), mat(sx + 0.7 * c, y + 4.6, sz - 0.7 * s), BRONZE); // trident
+  cb.geo(new THREE.ConeGeometry(0.25, 0.5, 3), mat(sx + 0.7 * c, y + 6.9, sz - 0.7 * s), BRONZE);
+  for (const u of [-1.9, 1.9]) {
+    const [gx, gz] = P(u, 2.0);
+    cb.geo(new THREE.CapsuleGeometry(0.4, 1.4, 2, 6), mat(gx, y + 1.9, gz, ry, 1, 1, 1, 0.5, Math.sign(u) * 0.6), MARBLE);
+    cb.geo(new THREE.ConeGeometry(0.4, 1.0, 6), mat(gx, y + 1.3, gz + 0.3, ry, 1, 1, 1, Math.PI / 2), '#9fb5b0'); // dolphin
   }
 }

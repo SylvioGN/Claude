@@ -33,10 +33,10 @@ function busGeometry() {
   return cb.buildGeometry();
 }
 
-// Height of a route with a precomputed road profile at distance s.
-function level(r, s) {
-  const f = Math.max(0, Math.min(r.prof.length - 1.001, s / r.step)), i = Math.floor(f), t = f - i;
-  return r.prof[i] + (r.prof[i + 1] - r.prof[i]) * t;
+// Height of a precomputed road profile (samples every `step` units) at distance s.
+function level(prof, step, s) {
+  const f = Math.max(0, Math.min(prof.length - 1.001, s / step)), i = Math.floor(f), t = f - i;
+  return prof[i] + (prof[i + 1] - prof[i]) * t;
 }
 
 // A drivable polyline with cumulative lengths.
@@ -66,13 +66,18 @@ export function buildTraffic(ctx, material) {
   const routes = [];
   const muro = MAP.BACKDROP.muroTorto || [];
   if (muro.length > 1) {
-    // road level along the cutting; under the Pincio footbridge the cars dip below the deck
-    const l = lane(muro), STEP = 2, n = Math.ceil(l.length / STEP) + 1;
-    const prof = new Float32Array(n), under = new Uint8Array(n), q = {};
+    // Road level of each lane along the cutting. The cutting is V-shaped, so a lane follows the
+    // higher of the centre line and the ground under it; under the Pincio footbridge the cars run
+    // straight from one end of the arch to the other.
+    const l = lane(muro), STEP = 2, OFF = 2.2, n = Math.ceil(l.length / STEP) + 1;
+    const fwd = new Float32Array(n), back = new Float32Array(n), under = new Uint8Array(n), q = {};
     const bridges = MAP.PATHS.filter((pp) => pp.k === 'bridge');
     for (let i = 0; i < n; i++) {
       sample(l, i * STEP, q);
-      prof[i] = T.heightAt(q.x, q.z);
+      const h = T.heightAt(q.x, q.z);
+      // traffic keeps right: dir +1 drives on the (-dz, dx) side, dir -1 on the other
+      fwd[i] = Math.max(h, T.heightAt(q.x - q.dz * OFF, q.z + q.dx * OFF));
+      back[i] = Math.max(h, T.heightAt(q.x + q.dz * OFF, q.z - q.dx * OFF));
       under[i] = bridges.some((b) => b.p.some(([bx, bz]) => Math.hypot(bx - q.x, bz - q.z) < b.w / 2 + 9)) ? 1 : 0;
     }
     for (let i = 0; i < n; i++) {
@@ -80,10 +85,12 @@ export function buildTraffic(ctx, material) {
       let a = i, b = i;
       while (a > 0 && under[a]) a--;
       while (b < n - 1 && under[b]) b++;
-      for (let k = a + 1; k < b; k++) prof[k] = prof[a] + ((prof[b] - prof[a]) * (k - a)) / (b - a);
+      for (const prof of [fwd, back]) {
+        for (let k = a + 1; k < b; k++) prof[k] = prof[a] + ((prof[b] - prof[a]) * (k - a)) / (b - a);
+      }
       i = b;
     }
-    routes.push({ l, two: true, off: 2.4, weight: 2.2, prof, under, step: STEP });
+    routes.push({ l, two: true, off: OFF, weight: 2.2, prof: { 1: fwd, '-1': back }, step: STEP });
   }
   for (const r of ROADS) {
     if (r.c > 1 || /Muro Torto/.test(r.n)) continue;
@@ -140,7 +147,8 @@ export function buildTraffic(ctx, material) {
       sample(v.r.l, s2, ahead);
       let y, y2;
       if (v.r.prof) {
-        y = level(v.r, v.s); y2 = level(v.r, s2);
+        const prof = v.r.prof[v.dir];
+        y = level(prof, v.r.step, v.s); y2 = level(prof, v.r.step, s2);
       } else {
         y = T.heightAt(x, z); y2 = T.heightAt(ahead.x - fz * off, ahead.z + fx * off);
       }

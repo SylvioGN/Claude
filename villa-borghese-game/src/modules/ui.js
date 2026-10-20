@@ -3,7 +3,7 @@
 // DOM lives in #ui; CSS is injected from ui/style.js. All text goes through STRINGS.
 import { FAMILY } from '../data/family.js';
 import { LANGS } from '../core/game.js';
-import { stopName, stopFacts } from './content.js';
+import { stopName as contentName, stopFacts as contentFacts, parkFacts as contentParkFacts } from './content.js';
 import { CSS } from './ui/style.js';
 import { svgIcon, ART, FLAGS, CART_ART, medalSvg, MEDAL_COLORS, shade } from './ui/icons.js';
 import { drawPortrait, PORTRAIT_BG } from './ui/portraits.js';
@@ -11,7 +11,7 @@ import { createMapImage, drawMinimap } from './ui/map.js';
 
 export const STRINGS = {
   en: {
-    subtitle: 'Cart Adventure', play: 'Play', whoDrives: 'Who drives?', namePh: 'Type a name',
+    play: 'Play', whoDrives: 'Who drives?',
     easyShort: 'Easy', easy: 'Easy driving', sound: 'Sounds', music: 'Music', language: 'Language',
     album: 'Photo album', map: 'Map', settings: 'Settings', resume: 'Keep playing', home: 'Home', paused: 'Pause',
     newTour: 'New tour', sure: 'Sure? Tap again', allDone: 'All places found!', oops: 'Oops!|Bonk!|Whoa!',
@@ -19,13 +19,13 @@ export const STRINGS = {
     medal_bronze: 'Bronze medal!', medal_silver: 'Silver medal!', medal_gold: 'Gold medal!',
     youDidIt: 'You did it!', tourDone: 'You visited the whole park!', keepDriving: 'Keep driving',
     rotate: 'Turn your phone sideways for a bigger park!', ok: 'OK', go: 'GO', north: 'N',
-    keysDrive: 'drive', keysHorn: 'horn', keysSpace: 'space', keysPause: 'pause', driver: 'Driver', places: 'places',
-    albumEmpty: 'Find the places in the park to take photos!', youAreHere: 'You are here',
+    keysDrive: 'drive', keysHorn: 'horn', keysSpace: 'space', keysPause: 'pause',
+    albumEmpty: 'Find the places in the park to take photos!', didYouKnow: 'Did you know?', fewBumps: 'Few bumps',
     d_blue: 'Blue shirt', d_kid: 'Little explorer', d_cap: 'Cap and beard', d_leopard: 'Leopard skirt',
     d_jacket: 'Brown jacket', d_red: 'Red top', d_polo: 'Green polo',
   },
   it: {
-    subtitle: 'Avventura in golf cart', play: 'Gioca', whoDrives: 'Chi guida?', namePh: 'Scrivi un nome',
+    play: 'Gioca', whoDrives: 'Chi guida?',
     easyShort: 'Facile', easy: 'Guida facile', sound: 'Suoni', music: 'Musica', language: 'Lingua',
     album: 'Album di foto', map: 'Mappa', settings: 'Impostazioni', resume: 'Continua', home: 'Inizio', paused: 'Pausa',
     newTour: 'Nuovo giro', sure: 'Sicuro? Tocca ancora', allDone: 'Tutti i posti trovati!', oops: 'Ops!|Bum!|Ehi!',
@@ -33,13 +33,13 @@ export const STRINGS = {
     medal_bronze: 'Medaglia di bronzo!', medal_silver: "Medaglia d'argento!", medal_gold: "Medaglia d'oro!",
     youDidIt: "Ce l'hai fatta!", tourDone: 'Hai visitato tutto il parco!', keepDriving: 'Continua a guidare',
     rotate: 'Gira il telefono per vedere più parco!', ok: 'OK', go: 'VAI', north: 'N',
-    keysDrive: 'guida', keysHorn: 'clacson', keysSpace: 'spazio', keysPause: 'pausa', driver: 'Alla guida', places: 'posti',
-    albumEmpty: 'Trova i posti del parco per scattare le foto!', youAreHere: 'Sei qui',
+    keysDrive: 'guida', keysHorn: 'clacson', keysSpace: 'spazio', keysPause: 'pausa',
+    albumEmpty: 'Trova i posti del parco per scattare le foto!', didYouKnow: 'Lo sapevi?', fewBumps: 'Pochi urti',
     d_blue: 'Maglia azzurra', d_kid: 'Piccolo esploratore', d_cap: 'Cappellino e barba', d_leopard: 'Gonna leopardata',
     d_jacket: 'Giacca marrone', d_red: 'Top rosso', d_polo: 'Polo verde',
   },
   fr: {
-    subtitle: "L'aventure en voiturette", play: 'Jouer', whoDrives: 'Qui conduit ?', namePh: 'Écris un prénom',
+    play: 'Jouer', whoDrives: 'Qui conduit ?',
     easyShort: 'Facile', easy: 'Conduite facile', sound: 'Sons', music: 'Musique', language: 'Langue',
     album: 'Album photo', map: 'Carte', settings: 'Réglages', resume: 'Continuer', home: 'Accueil', paused: 'Pause',
     newTour: 'Nouvelle visite', sure: 'Sûr ? Touche encore', allDone: 'Tous les lieux trouvés !', oops: 'Oups !|Boum !|Ouh là !',
@@ -47,13 +47,13 @@ export const STRINGS = {
     medal_bronze: 'Médaille de bronze !', medal_silver: "Médaille d'argent !", medal_gold: "Médaille d'or !",
     youDidIt: 'Bravo, tu as réussi !', tourDone: 'Tu as visité tout le parc !', keepDriving: 'Continuer à rouler',
     rotate: 'Tourne ton téléphone pour voir le parc en grand !', ok: 'OK', go: 'GO', north: 'N',
-    keysDrive: 'conduire', keysHorn: 'klaxon', keysSpace: 'espace', keysPause: 'pause', driver: 'Au volant', places: 'lieux',
-    albumEmpty: 'Trouve les lieux du parc pour prendre des photos !', youAreHere: 'Tu es ici',
+    keysDrive: 'conduire', keysHorn: 'klaxon', keysSpace: 'espace', keysPause: 'pause',
+    albumEmpty: 'Trouve les lieux du parc pour prendre des photos !', didYouKnow: 'Le savais-tu ?', fewBumps: 'Peu de chocs',
     d_blue: 'T-shirt bleu', d_kid: 'Petit explorateur', d_cap: 'Casquette et barbe', d_leopard: 'Jupe léopard',
     d_jacket: 'Veste marron', d_red: 'Haut rouge', d_polo: 'Polo vert',
   },
   es: {
-    subtitle: 'Aventura en carrito', play: 'Jugar', whoDrives: '¿Quién conduce?', namePh: 'Escribe un nombre',
+    play: 'Jugar', whoDrives: '¿Quién conduce?',
     easyShort: 'Fácil', easy: 'Conducción fácil', sound: 'Sonidos', music: 'Música', language: 'Idioma',
     album: 'Álbum de fotos', map: 'Mapa', settings: 'Ajustes', resume: 'Seguir jugando', home: 'Inicio', paused: 'Pausa',
     newTour: 'Nuevo paseo', sure: '¿Seguro? Toca otra vez', allDone: '¡Todos los lugares encontrados!', oops: '¡Uy!|¡Bum!|¡Ay!',
@@ -61,13 +61,13 @@ export const STRINGS = {
     medal_bronze: '¡Medalla de bronce!', medal_silver: '¡Medalla de plata!', medal_gold: '¡Medalla de oro!',
     youDidIt: '¡Lo lograste!', tourDone: '¡Visitaste todo el parque!', keepDriving: 'Seguir conduciendo',
     rotate: '¡Gira el móvil para ver el parque más grande!', ok: 'OK', go: 'YA', north: 'N',
-    keysDrive: 'conducir', keysHorn: 'bocina', keysSpace: 'espacio', keysPause: 'pausa', driver: 'Al volante', places: 'lugares',
-    albumEmpty: '¡Encuentra los lugares del parque para hacer fotos!', youAreHere: 'Estás aquí',
+    keysDrive: 'conducir', keysHorn: 'bocina', keysSpace: 'espacio', keysPause: 'pausa',
+    albumEmpty: '¡Encuentra los lugares del parque para hacer fotos!', didYouKnow: '¿Lo sabías?', fewBumps: 'Pocos choques',
     d_blue: 'Camiseta azul', d_kid: 'Pequeño explorador', d_cap: 'Gorra y barba', d_leopard: 'Falda de leopardo',
     d_jacket: 'Chaqueta marrón', d_red: 'Top rojo', d_polo: 'Polo verde',
   },
   pt: {
-    subtitle: 'Aventura de carrinho', play: 'Jogar', whoDrives: 'Quem dirige?', namePh: 'Escreva um nome',
+    play: 'Jogar', whoDrives: 'Quem dirige?',
     easyShort: 'Fácil', easy: 'Direção fácil', sound: 'Sons', music: 'Música', language: 'Idioma',
     album: 'Álbum de fotos', map: 'Mapa', settings: 'Ajustes', resume: 'Continuar', home: 'Início', paused: 'Pausa',
     newTour: 'Novo passeio', sure: 'Certeza? Toque de novo', allDone: 'Todos os lugares encontrados!', oops: 'Opa!|Bum!|Eita!',
@@ -75,14 +75,27 @@ export const STRINGS = {
     medal_bronze: 'Medalha de bronze!', medal_silver: 'Medalha de prata!', medal_gold: 'Medalha de ouro!',
     youDidIt: 'Você conseguiu!', tourDone: 'Você visitou o parque inteiro!', keepDriving: 'Continuar dirigindo',
     rotate: 'Vire o celular para ver o parque maior!', ok: 'OK', go: 'VAI', north: 'N',
-    keysDrive: 'dirigir', keysHorn: 'buzina', keysSpace: 'espaço', keysPause: 'pausa', driver: 'No volante', places: 'lugares',
-    albumEmpty: 'Encontre os lugares do parque para tirar fotos!', youAreHere: 'Você está aqui',
+    keysDrive: 'dirigir', keysHorn: 'buzina', keysSpace: 'espaço', keysPause: 'pausa',
+    albumEmpty: 'Encontre os lugares do parque para tirar fotos!', didYouKnow: 'Você sabia?', fewBumps: 'Poucas batidas',
     d_blue: 'Camiseta azul', d_kid: 'Pequeno explorador', d_cap: 'Boné e barba', d_leopard: 'Saia de oncinha',
     d_jacket: 'Jaqueta marrom', d_red: 'Blusa vermelha', d_polo: 'Polo verde',
   },
 };
+// French puts a space before ! ? : ; - make it a narrow no-break space so the mark never wraps alone.
+const frSpaces = (s) => s.replace(/ ([!?:;»])/g, '\u202f$1').replace(/« /g, '«\u202f');
+for (const k of Object.keys(STRINGS.fr)) STRINGS.fr[k] = frSpaces(STRINGS.fr[k]);
+const typo = (s, lang) => (lang === 'fr' ? frSpaces(s) : s);
+const stopName = (id, lang) => typo(contentName(id, lang), lang);
+const stopFacts = (id, lang) => contentFacts(id, lang).map((f) => typo(f, lang));
+const parkFacts = (lang) => contentParkFacts(lang).map((f) => typo(f, lang));
+
+// The logo is the family's (French) name and stays the same in every language.
+const LOGO = '<span class="l0">Les Aventures de la</span><span class="l1">Famille Poutot</span><span class="l2">à la Villa Borghese</span>';
 const LANG_NAMES = { en: 'English', it: 'Italiano', fr: 'Français', es: 'Español', pt: 'Português' };
 const SPEECH_LANG = { en: 'en-GB', it: 'it-IT', fr: 'fr-FR', es: 'es-ES', pt: 'pt-BR' };
+// End-screen stars, the same rules as game.stars(): 1 for the tour, 1 for gelato, 1 for careful driving.
+const STAR_GELATO = 12, STAR_BUMPS = 25;
+const PINECONE_HINT = 25; // the pine-cone chip twinkles when a hidden cone is this close
 // one gelato colour per tour stop (markers, stamps)
 const STOP_COLORS = ['#ff9fc0', '#ffd36b', '#8fd3ff', '#b5e47a', '#ffb27d', '#c7a8ff', '#7fe0c6', '#ffc4a8', '#9fc4ff', '#ffe58a', '#a8e6a1', '#ffb3c8'];
 const ALBUM_KEY = 'villa-borghese-album-v1';
@@ -128,7 +141,7 @@ export async function create(ctx) {
     for (const n of scope.querySelectorAll('[data-tp]')) n.placeholder = t(n.dataset.tp);
     for (const n of scope.querySelectorAll('[data-ta]')) n.setAttribute('aria-label', t(n.dataset.ta));
   }
-  const sfx = (name) => { try { ctx.modules.audio?.play?.(name); } catch { /* audio is optional */ } };
+  const sfx = (name, opts) => { try { ctx.modules.audio?.play?.(name, opts); } catch { /* audio is optional */ } };
   // click handler with the tap sound
   const tap = (node, fn) => node.addEventListener('click', (e) => { sfx('tap'); fn(e); });
   const layer = (cls) => {
@@ -144,6 +157,9 @@ export async function create(ctx) {
     return (G.settings.names?.[p.id] || '').trim() || t(`d_${p.id}`);
   };
   const medalAt = (n) => [...G.medals].reverse().find((m) => n >= m.at)?.id || null;
+  // the golden pine cones hidden in the park (actors), for the "n/8" chips and the near hint
+  const coneList = () => ctx.modules.actors?.collect?.cones || null;
+  const coneTotal = () => coneList()?.length || 0;
 
   let touchMode = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
 
@@ -167,13 +183,13 @@ export async function create(ctx) {
   const title = layer('vb-title');
   title.innerHTML = `
     <div class="t-left">
-      <div class="logo"><span class="l0">Les Aventures de la</span><span class="l1">Famille Poutot</span><span class="l2">à la Villa Borghese</span></div>
+      <div class="logo">${LOGO}</div>
       ${CART_ART}
       <button class="vb-btn green big play">${svgIcon('play')}<span data-t="play"></span></button>
       <div class="t-prog">
         <span class="chip p-stops"></span>
         <span class="chip p-gel">${ART.gelato}<b></b></span>
-        <span class="chip p-cone">${ART.pinecone}<b></b></span>
+        <span class="chip p-cone">${ART.pinecone}<b></b><small></small></span>
         <button class="vb-btn round small p-album" data-ta="album">${svgIcon('photos')}</button>
         <button class="vb-btn round small p-new" data-ta="newTour">${svgIcon('refresh')}<span></span></button>
       </div>
@@ -197,7 +213,7 @@ export async function create(ctx) {
   FAMILY.forEach((p, i) => {
     const b = el(`<button class="drv" data-i="${i}"><span class="tick">${svgIcon('check')}</span><span class="nm"></span></button>`);
     b.prepend(portrait(i));
-    tap(b, () => selectDriver(i));
+    b.addEventListener('click', () => { sfx('select'); selectDriver(i); });
     driversBox.appendChild(b);
   });
   function refreshDrivers() {
@@ -255,17 +271,21 @@ export async function create(ctx) {
     document.documentElement.lang = l;
     G.setSettings({ lang: l });
   }
+  // One row of flags above the button (below it when there is no room), always inside the screen.
   function openLangPopover(btn) {
-    const pop = el(`<div class="langpop">${LANGS.map((l) => `<button data-lang="${l}" class="${l === lang ? 'sel' : ''}">${FLAGS[l]}<span>${LANG_NAMES[l]}</span></button>`).join('')}</div>`);
-    const catcher = el('<div style="position:absolute;inset:0;z-index:4;pointer-events:auto"></div>');
+    const pop = el(`<div class="langpop">${LANGS.map((l) => `<button data-lang="${l}" class="${l === lang ? 'sel' : ''}" aria-label="${LANG_NAMES[l]}">${FLAGS[l]}<span>${l.toUpperCase()}</span></button>`).join('')}</div>`);
+    const catcher = el('<div class="catcher"></div>');
     const close = () => { pop.remove(); catcher.remove(); };
     catcher.addEventListener('pointerdown', close);
     pop.querySelectorAll('button').forEach((b) => tap(b, () => { setLang(b.dataset.lang); close(); }));
     root.append(catcher, pop);
+    sfx('pop');
     const r = btn.getBoundingClientRect();
     const ph = pop.offsetHeight, pw = pop.offsetWidth;
+    const above = r.top - ph - 10, below = r.bottom + 10;
+    const top = above >= 8 || below + ph > innerHeight - 8 ? above : below;
     pop.style.left = `${Math.max(8, Math.min(innerWidth - pw - 8, r.left + r.width / 2 - pw / 2))}px`;
-    pop.style.top = `${Math.max(8, r.top - ph - 10 < 8 ? r.bottom + 10 : r.top - ph - 10)}px`;
+    pop.style.top = `${Math.max(8, Math.min(innerHeight - ph - 8, top))}px`;
   }
 
   let newBtns = [];
@@ -305,6 +325,7 @@ export async function create(ctx) {
     q('.p-stops', title).innerHTML = `${medalSvg(m ? MEDAL_COLORS[m] : 'none')}<b>${n}/${total}</b>`;
     q('.p-gel b', title).textContent = G.score.gelato;
     q('.p-cone b', title).textContent = G.score.pinecones;
+    q('.p-cone small', title).textContent = coneTotal() ? `/${coneTotal()}` : '';
     const any = n > 0 || G.score.gelato > 0 || G.score.pinecones > 0;
     for (const s of ['.p-gel', '.p-cone', '.p-new']) q(s, title).hidden = !any;
   }
@@ -346,7 +367,8 @@ export async function create(ctx) {
       <button class="vb-btn round pause" data-ta="paused">${svgIcon('pause')}</button>
       <div class="counters">
         <span class="chip h-gel">${ART.gelato}<b>0</b></span>
-        <span class="chip h-cone">${ART.pinecone}<b>0</b></span>
+        <span class="chip h-cone">${ART.pinecone}<b>0</b><small></small></span>
+        <span class="chip medalct h-medal"></span>
       </div>
       <div class="hud-next"><div class="next">
         <span class="medalct"></span>
@@ -360,7 +382,7 @@ export async function create(ctx) {
     <div class="keys"><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd><span data-t="keysDrive"></span><span class="sep"></span><kbd data-t="keysSpace"></kbd><span data-t="keysHorn"></span><span class="sep"></span><kbd>P</kbd><span data-t="keysPause"></span></div>`;
   const hGel = q('.h-gel', hud), hCone = q('.h-cone', hud);
   const nextEl = q('.next', hud), nextIc = q('.stopic', nextEl), nextNm = q('.nm', nextEl), nextDist = q('.dist', nextEl);
-  const nextDir = q('.dir .ic', nextEl), medalCt = q('.medalct', nextEl);
+  const nextDir = q('.dir .ic', nextEl), medalCts = hud.querySelectorAll('.medalct'); // pill (landscape) + chip (portrait)
   const mini = q('.minimap', hud), miniCanvas = q('canvas', mini), miniG = miniCanvas.getContext('2d');
   const keysHint = q('.keys', hud);
   tap(q('.pause', hud), () => openPause());
@@ -374,13 +396,64 @@ export async function create(ctx) {
     hudCache[key] = v;
     node.textContent = v;
   }
+  // Where the guide's golden route goes: the same look-ahead point as the 3D arrow above the cart,
+  // and the distance left along the avenues. Straight line to the stop when there is no route.
+  const aim = { x: 0, z: 0, left: 0 };
+  let aimRoute = null, aimSeg = 1;
+  function aimAt(s, px, pz) {
+    const r = ctx.modules.guide?.route;
+    aim.x = s.spotX; aim.z = s.spotZ; aim.left = Math.hypot(s.spotX - px, s.spotZ - pz);
+    if (!r || r.stop !== s || !(r.pts?.length > 1)) return aim;
+    if (r !== aimRoute) { aimRoute = r; aimSeg = 1; }
+    // project the cart on the route (slight preference for the stretch it was on)
+    const P = r.pts;
+    let best = Infinity, bs = 0, bd = 0, bi = 1;
+    for (let i = 1; i < P.length; i++) {
+      const ax = P[i - 1][0], az = P[i - 1][1], ex = P[i][0] - ax, ez = P[i][1] - az;
+      const L2 = ex * ex + ez * ez || 1;
+      const k = Math.max(0, Math.min(1, ((px - ax) * ex + (pz - az) * ez) / L2));
+      const dx = ax + ex * k - px, dz = az + ez * k - pz, d2 = dx * dx + dz * dz;
+      const score = d2 + (i < aimSeg ? 4 : 0);
+      if (score < best) { best = score; bd = d2; bi = i; bs = r.cum[i - 1] + (r.cum[i] - r.cum[i - 1]) * k; }
+    }
+    aimSeg = bi;
+    aim.left = Math.max(0, r.len - bs) + Math.sqrt(bd);
+    // 13 units ahead along the route, like the guide's arrow
+    const sa = Math.min(r.len, bs + 13);
+    let i = aimSeg;
+    while (i < P.length - 1 && r.cum[i] < sa) i++;
+    const L = r.cum[i] - r.cum[i - 1] || 1, k = Math.max(0, Math.min(1, (sa - r.cum[i - 1]) / L));
+    const ax = P[i - 1][0] + (P[i][0] - P[i - 1][0]) * k, az = P[i - 1][1] + (P[i][1] - P[i - 1][1]) * k;
+    if (Math.hypot(ax - px, az - pz) > 2) { aim.x = ax; aim.z = az; }
+    return aim;
+  }
+  // A hidden golden pine cone close by: the chip twinkles and the mini-map shows a sparkle.
+  const coneHint = { x: 0, z: 0, on: false };
+  function findConeHint(px, pz) {
+    coneHint.on = false;
+    const list = coneList();
+    let bd = PINECONE_HINT * PINECONE_HINT;
+    for (let i = 0; list && i < list.length; i++) {
+      const k = list[i];
+      if (k.state !== 0) continue; // 0 = still hidden
+      const dx = k.x - px, dz = k.z - pz, d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; coneHint.x = k.x; coneHint.z = k.z; coneHint.on = true; }
+    }
+    if (hudCache.coneNear !== coneHint.on) { hudCache.coneNear = coneHint.on; hCone.classList.toggle('near', coneHint.on); }
+  }
   function refreshHud(force = false) {
     if (force) for (const k of Object.keys(hudCache)) delete hudCache[k];
     setText(q('b', hGel), 'gel', String(G.score.gelato));
     setText(q('b', hCone), 'cone', String(G.score.pinecones));
+    setText(q('small', hCone), 'coneTotal', coneTotal() ? `/${coneTotal()}` : '');
     const n = G.visitedCount, m = medalAt(n);
     const mk = `${n}:${m}`;
-    if (hudCache.medal !== mk) { hudCache.medal = mk; medalCt.innerHTML = `${medalSvg(m ? MEDAL_COLORS[m] : 'none')}<b>${n}/${stops.length}</b>`; }
+    if (hudCache.medal !== mk) {
+      hudCache.medal = mk;
+      for (const e of medalCts) e.innerHTML = `${medalSvg(m ? MEDAL_COLORS[m] : 'none')}<b>${n}/${stops.length}</b>`;
+    }
+    const c = ctx.cart;
+    if (c) findConeHint(c.position.x, c.position.z);
     const s = G.nextStop();
     if (!s) {
       nextEl.classList.add('done');
@@ -391,10 +464,10 @@ export async function create(ctx) {
     nextEl.classList.remove('done');
     if (hudCache.stop !== s.id) { hudCache.stop = s.id; nextIc.innerHTML = svgIcon(s.icon); nextIc.style.background = stopColor(s); }
     setText(nextNm, 'nm', stopName(s.id, lang));
-    const c = ctx.cart;
     if (!c) return;
-    const dx = s.spotX - c.position.x, dz = s.spotZ - c.position.z;
-    const metres = Math.hypot(dx, dz) / UNITS_PER_METRE;
+    const a = aimAt(s, c.position.x, c.position.z);
+    const dx = a.x - c.position.x, dz = a.z - c.position.z;
+    const metres = a.left / UNITS_PER_METRE;
     setText(nextDist, 'dist', `${metres > 100 ? Math.round(metres / 10) * 10 : Math.max(5, Math.round(metres / 5) * 5)} m`);
     // arrow relative to the cart's heading (screen up = forward)
     const th = c.heading - Math.PI;
@@ -412,12 +485,14 @@ export async function create(ctx) {
     if (px !== miniSize) { miniSize = px; miniCanvas.width = miniCanvas.height = px; }
   }
   const marks = stops.map((s) => ({ x: s.x, z: s.z, icon: s.icon, color: stopColor(s), visited: false, next: false }));
+  const miniView = { x: 0, z: 0, heading: 0 };
   function drawMini() {
     const c = ctx.cart;
     if (!c || !miniSize) return;
     const next = G.nextStop();
-    stops.forEach((s, i) => { marks[i].visited = s.visited; marks[i].next = s === next; });
-    drawMinimap(miniG, mapImg, miniSize, { x: c.position.x, z: c.position.z, heading: c.heading }, marks, 70, t('north'));
+    for (let i = 0; i < stops.length; i++) { marks[i].visited = stops[i].visited; marks[i].next = stops[i] === next; }
+    miniView.x = c.position.x; miniView.z = c.position.z; miniView.heading = c.heading;
+    drawMinimap(miniG, mapImg, miniSize, miniView, marks, 70, t('north'), coneHint.on ? coneHint : null, ctx.time);
   }
 
   // pops and banners
@@ -563,6 +638,7 @@ export async function create(ctx) {
     modals.push({ wrap, onClose });
     root.appendChild(wrap);
     applyStrings(wrap);
+    sfx('pop');
     return wrap;
   }
   function closeModal() {
@@ -583,26 +659,53 @@ export async function create(ctx) {
     if (G.state === 'paused') G.pause(false);
   }
 
+  const canSpeak = 'speechSynthesis' in window;
+  function speak(text) {
+    try {
+      const ss = window.speechSynthesis;
+      ss.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = SPEECH_LANG[lang]; u.rate = 0.95; u.pitch = 1.1;
+      ss.speak(u);
+    } catch { /* no voices */ }
+  }
+  // a different fun fact about the park each time the game is paused
+  let factIndex = Math.floor(Math.random() * 16);
+
   function openPause() {
     if (modals.length) { if (G.state === 'playing') G.pause(true); return; }
     const drv = G.settings.driver | 0;
-    const panel = el(`<div class="panel">
+    const panel = el(`<div class="panel pause-panel">
       <h2>${svgIcon('pause')}<span data-t="paused"></span></h2>${closeBtn()}
-      <div class="pause-grid">
-        <button class="vb-btn green big resume">${svgIcon('play')}<span data-t="resume"></span></button>
-        <button class="vb-btn tile blue m-map">${svgIcon('map')}<span data-t="map"></span></button>
-        <button class="vb-btn tile pink m-album">${svgIcon('photos')}<span data-t="album"></span></button>
-        <button class="vb-btn tile yellow m-set">${svgIcon('settings')}<span data-t="settings"></span></button>
-        <button class="vb-btn tile m-home">${svgIcon('home')}<span data-t="home"></span></button>
-      </div>
-      <div class="pause-foot">
-        <div class="whodrives"><span class="pf-name"></span></div>
-        <button class="vb-btn small m-new" data-idle="newTour">${svgIcon('refresh')}<span data-t="newTour"></span></button>
+      <div class="pause-body">
+        <div class="pause-main">
+          <div class="pause-grid">
+            <button class="vb-btn green big resume">${svgIcon('play')}<span data-t="resume"></span></button>
+            <button class="vb-btn tile blue m-map">${svgIcon('map')}<span data-t="map"></span></button>
+            <button class="vb-btn tile pink m-album">${svgIcon('photos')}<span data-t="album"></span></button>
+            <button class="vb-btn tile yellow m-set">${svgIcon('settings')}<span data-t="settings"></span></button>
+            <button class="vb-btn tile m-home">${svgIcon('home')}<span data-t="home"></span></button>
+          </div>
+          <div class="pause-foot">
+            <div class="whodrives"><span class="pf-name"></span></div>
+            <button class="vb-btn small m-new" data-idle="newTour">${svgIcon('refresh')}<span data-t="newTour"></span></button>
+          </div>
+        </div>
+        <div class="fact">
+          <div class="fact-head">${ART.pinecone}<span data-t="didYouKnow"></span>
+            ${canSpeak ? `<button class="vb-btn round small yellow f-read" data-ta="readAloud">${svgIcon('speak')}</button>` : ''}</div>
+          <p></p>
+        </div>
       </div>
     </div>`);
     const who = q('.whodrives', panel);
     who.prepend(portrait(drv, 104));
     q('.pf-name', panel).textContent = driverName(drv);
+    const facts = parkFacts(lang);
+    const fact = facts[factIndex++ % facts.length] || '';
+    q('.fact p', panel).textContent = fact;
+    q('.fact', panel).hidden = !fact;
+    if (canSpeak) tap(q('.f-read', panel), () => speak(`${t('didYouKnow')} ${fact}`));
     tap(q('.x', panel), resume);
     tap(q('.resume', panel), resume);
     tap(q('.m-map', panel), () => openMap(false));
@@ -612,7 +715,8 @@ export async function create(ctx) {
       closeAllModals();
       const c = ctx.cart;
       G.setState('title');
-      if (c) ctx.camRig.setMode('title', { x: c.position.x, z: c.position.z, r: 26, h: 10, a: c.heading + Math.PI * 0.75 });
+      // the same slow, low orbit around the cart as the first title screen (main.js)
+      if (c) ctx.camRig.setMode('title', { x: c.position.x, z: c.position.z, r: 15, h: 4.5, lookY: 2, a: c.heading + Math.PI * 0.7, speed: 0.05 });
     });
     confirmButton(q('.m-new', panel), () => { newTour(); resume(); });
     openModal(panel);
@@ -776,6 +880,7 @@ export async function create(ctx) {
       q('.vf-count', photoLayer)?.remove();
       const c = el(`<div class="vf-count">${count}</div>`);
       q('.viewfinder', photoLayer)?.appendChild(c);
+      sfx('tick', { n: count });
     }
     if (count === 4 && p.step !== 4) {
       p.step = 4;
@@ -808,7 +913,7 @@ export async function create(ctx) {
         <h3></h3>
         <ul class="facts"></ul>
         <div class="pbtns">
-          ${'speechSynthesis' in window ? `<button class="vb-btn round yellow p-read" aria-label="${t('readAloud')}">${svgIcon('speak')}</button>` : ''}
+          ${canSpeak ? `<button class="vb-btn round yellow p-read" aria-label="${t('readAloud')}">${svgIcon('speak')}</button>` : ''}
           <button class="vb-btn green big go"><span>${t('letsGo')}</span>${svgIcon('play')}</button>
         </div>
       </div>
@@ -828,17 +933,7 @@ export async function create(ctx) {
       q('.pbtns', card).before(m);
     }
     const read = q('.p-read', card);
-    if (read) {
-      tap(read, () => {
-        try {
-          const ss = window.speechSynthesis;
-          ss.cancel();
-          const u = new SpeechSynthesisUtterance([name, ...facts].join('. '));
-          u.lang = SPEECH_LANG[lang]; u.rate = 0.95; u.pitch = 1.1;
-          ss.speak(u);
-        } catch { /* no voices */ }
-      });
-    }
+    if (read) tap(read, () => speak([name, ...facts].join('. ')));
     tap(q('.go', card), closeCard);
     photoLayer.innerHTML = '';
     photoLayer.appendChild(card);
@@ -869,15 +964,22 @@ export async function create(ctx) {
 
   // ---------- tour complete ----------
   ev.on('tourComplete', () => {
+    // one star for the tour, one for gelato, one for careful driving: each says how it is earned
     const stars = Math.max(1, Math.min(3, G.stars()));
+    let lit = [true, G.score.gelato >= STAR_GELATO, G.score.bumps <= STAR_BUMPS];
+    if (lit.filter(Boolean).length !== stars) lit = [0, 1, 2].map((i) => i < stars);
+    const why = [
+      `${medalSvg(MEDAL_COLORS.gold)}<b>${stops.length}/${stops.length}</b>`,
+      `${ART.gelato}<b>${STAR_GELATO}</b>`,
+      `${svgIcon('wheel')}<b data-t="fewBumps"></b>`,
+    ];
     const panel = el(`<div class="panel finish">
       <div class="big-title" data-t="youDidIt"></div>
       <div class="sub" data-t="tourDone"></div>
-      <div class="stars">${[0, 1, 2].map((i) => svgIcon('star', i < stars ? 'lit' : '')).join('')}</div>
+      <div class="stars">${why.map((w, i) => `<div class="star${lit[i] ? ' got' : ''}">${svgIcon('star', lit[i] ? 'lit' : '')}<span class="why">${w}</span></div>`).join('')}</div>
       <div class="row">
-        <span class="chip stat">${medalSvg(MEDAL_COLORS.gold)}<b>${stops.length}/${stops.length}</b></span>
         <span class="chip stat">${ART.gelato}<b>${G.score.gelato}</b></span>
-        <span class="chip stat">${ART.pinecone}<b>${G.score.pinecones}</b></span>
+        <span class="chip stat">${ART.pinecone}<b>${G.score.pinecones}</b><small>${coneTotal() ? `/${coneTotal()}` : ''}</small></span>
         <span class="chip stat">${svgIcon('clock')}<b>${fmtTime(G.tourTime)}</b></span>
       </div>
       <div class="row">
@@ -893,19 +995,27 @@ export async function create(ctx) {
   });
 
   // ---------- portrait tip ----------
-  let tipShown = storeGet(TIP_KEY) === '1';
-  let tipEl = null;
+  // Once, on the first drive in portrait: the game waits while it shows, until OK or the phone turns.
+  // Automated test browsers skip it (their portrait screenshots should show the game).
+  let tipShown = storeGet(TIP_KEY) === '1' || !!navigator.webdriver;
+  let tipEl = null, tipTimer = 0;
   function checkRotateTip() {
     const portraitNow = innerHeight > innerWidth * 1.1;
-    if (tipEl && (!portraitNow || G.state !== 'playing')) { tipEl.remove(); tipEl = null; }
-    if (tipShown || tipEl || !portraitNow || G.state !== 'playing' || !touchMode) return;
+    if (tipEl && !portraitNow) { closeRotateTip(); return; }
+    if (tipShown || !portraitNow || G.state !== 'playing' || !touchMode || modals.length) return;
     tipShown = true;
-    tipEl = el(`<div class="vb-card rotate-tip">${svgIcon('rotate')}<span data-t="rotate"></span><button class="vb-btn green small" data-t="ok"></button></div>`);
-    applyStrings(tipEl);
-    const dismiss = () => { tipEl?.remove(); tipEl = null; storeSet(TIP_KEY, '1'); };
-    tap(q('button', tipEl), dismiss);
-    hud.appendChild(tipEl);
-    setTimeout(dismiss, 8000);
+    storeSet(TIP_KEY, '1');
+    tipEl = el(`<div class="panel rotate-tip">${svgIcon('rotate')}<span data-t="rotate"></span><button class="vb-btn green" data-t="ok"></button></div>`);
+    tap(q('button', tipEl), closeRotateTip);
+    const wrap = openModal(tipEl);
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) closeRotateTip(); });
+    G.pause(true);
+  }
+  function closeRotateTip() {
+    if (!tipEl) return;
+    const open = tipEl.isConnected;
+    tipEl = null;
+    if (open) resume();
   }
 
   // ---------- state ----------
@@ -927,7 +1037,8 @@ export async function create(ctx) {
       // left paused from the outside (keyboard): drop the menus
       if (modals.length && !q('.finish', root)) closeAllModals();
       requestAnimationFrame(() => { sizeMinimap(); refreshHud(true); drawMini(); });
-      checkRotateTip();
+      // after Play, give fullscreen and the landscape lock a moment to turn the screen
+      if (!tipShown) { clearTimeout(tipTimer); tipTimer = setTimeout(checkRotateTip, 1200); }
     }
     if (s !== 'stop' && photo) { photo = null; photoLayer.innerHTML = ''; photoLayer.hidden = true; }
   }

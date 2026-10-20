@@ -3,6 +3,13 @@
 // gentle sparkle at the next stop's beacon.
 import * as THREE from 'three';
 
+// Marks the first n items of a dynamic buffer for upload (not the whole capacity).
+function uploadFirst(attr, n) {
+  attr.clearUpdateRanges();
+  attr.addUpdateRange(0, n * attr.itemSize);
+  attr.needsUpdate = true;
+}
+
 const CONFETTI_COLORS = ['#ff4d6d', '#ffd23f', '#3ec1ff', '#7bd94b', '#b46bff', '#ff9f1c', '#ffffff', '#ff7ac8'];
 const FIREWORK_COLORS = ['#ff2d3a', '#ffc400', '#1fb8ff', '#ff2fc0', '#3fe02a', '#8a4dff', '#ff7a00', '#ffffff'];
 export const MEDAL_COLORS = { bronze: '#e08a4a', silver: '#e6eef8', gold: '#ffd23a' };
@@ -239,8 +246,8 @@ export function createEffects(ctx) {
         confetti.setMatrixAt(i, _m);
         confetti.setColorAt(i, c.color);
       }
-      confetti.instanceMatrix.needsUpdate = true;
-      confetti.instanceColor.needsUpdate = true;
+      uploadFirst(confetti.instanceMatrix, conf.length);
+      uploadFirst(confetti.instanceColor, conf.length);
     }
     confetti.count = conf.length;
     confetti.visible = conf.length > 0;
@@ -264,9 +271,9 @@ export function createEffects(ctx) {
       sSize[i] = p.size * (0.6 + 0.4 * f);
     }
     if (sp.length) {
-      sGeo.attributes.position.needsUpdate = true;
-      sGeo.attributes.aColor.needsUpdate = true;
-      sGeo.attributes.aSize.needsUpdate = true;
+      uploadFirst(sGeo.attributes.position, sp.length);
+      uploadFirst(sGeo.attributes.aColor, sp.length);
+      uploadFirst(sGeo.attributes.aSize, sp.length);
     }
     sGeo.setDrawRange(0, sp.length);
     sparks.visible = sp.length > 0;

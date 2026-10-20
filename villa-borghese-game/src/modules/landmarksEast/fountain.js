@@ -3,7 +3,7 @@
 // world.js already draws the round basin, its water and a plain rim.
 import * as THREE from 'three';
 import { mats } from '../../core/util.js';
-import { C, FrameBuilder, tube } from './kit.js';
+import { C, FrameBuilder, tube, photoView } from './kit.js';
 
 const STONE = '#ebe4d2', STONE_DARK = '#cfc6ae';
 
@@ -140,6 +140,9 @@ export function buildCavalliMarini(ctx, waterMat) {
   wm.renderOrder = 2;
 
   ctx.reserve({ x: cx, z: cz, r: 5 });
+  // the postcard from the south-east with the sun behind the camera: the cart on the roundabout,
+  // the sea-horses and the jet just behind it
+  photoView(ctx, 'cavallimarini', { spot: [cx + 5.4, cz + 3.6], face: [0.03, 1], cam: [cx + 11.5, cz + 10.5, 6.3], look: [cx + 3, cz + 1.5, 1.8], far: [cx, cz], wide: 4 });
   return {
     meshes: [mesh, wm],
     jets: [{ x: cx, y: y0 + SH + 0.75, z: cz, r: 0.12, v: 5.6, main: true }],
