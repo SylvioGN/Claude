@@ -40,6 +40,16 @@ export function closestOnSegment(px, pz, ax, az, bx, bz) {
   return { x, z, t, d2: (px - x) * (px - x) + (pz - z) * (pz - z) };
 }
 
+// Squared distance from P to segment AB, without allocating (for hot loops).
+export function segDist2(px, pz, ax, az, bx, bz) {
+  const dx = bx - ax, dz = bz - az;
+  const len2 = dx * dx + dz * dz;
+  let t = len2 > 0 ? ((px - ax) * dx + (pz - az) * dz) / len2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const x = ax + dx * t - px, z = az + dz * t - pz;
+  return x * x + z * z;
+}
+
 // Closest point on a polyline. Returns {x, z, d, seg, t, dirX, dirZ}.
 export function closestOnPolyline(px, pz, pts, closed = false) {
   let best = null;

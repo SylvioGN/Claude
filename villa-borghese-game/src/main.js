@@ -39,7 +39,8 @@ async function boot(hotData) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = quality.shadows;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = quality.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+  renderer.debug.checkShaderErrors = params.has('debug');
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#8cc3e8');
@@ -85,11 +86,21 @@ async function boot(hotData) {
     plant(kind, x, z, opts = {}) { ctx.plantQueue.push({ kind, x, z, ...opts }); },
     // Areas kept clear of random trees and props: {x, z, r} circles or {ring: [[x, z], ...]}.
     reserved: [],
-    reserve(area) { ctx.reserved.push(area); },
+    reserve(area) {
+      if (area.ring) area.bbox = geo.ringBBox(area.ring);
+      ctx.reserved.push(area);
+    },
     isReserved(x, z, pad = 0) {
       for (const a of ctx.reserved) {
-        if (a.ring) { if (geo.pointInRing(x, z, a.ring) || (pad > 0 && geo.distToRingEdge(x, z, a.ring) < pad)) return true; }
-        else if (Math.hypot(x - a.x, z - a.z) < a.r + pad) return true;
+        if (a.ring) {
+          const b = a.bbox || (a.bbox = geo.ringBBox(a.ring));
+          if (x < b.minX - pad || x > b.maxX + pad || z < b.minZ - pad || z > b.maxZ + pad) continue;
+          if (geo.pointInRing(x, z, a.ring)) return true;
+          if (pad > 0) {
+            const r = a.ring, p2 = pad * pad;
+            for (let k = 0, m = r.length - 1; k < r.length; m = k++) if (geo.segDist2(x, z, r[m][0], r[m][1], r[k][0], r[k][1]) < p2) return true;
+          }
+        } else if (Math.hypot(x - a.x, z - a.z) < a.r + pad) return true;
       }
       return false;
     },
@@ -131,7 +142,8 @@ async function boot(hotData) {
   if (spawn) g.start = { x: spawn[0], z: spawn[1], heading: ((spawn[2] || 0) * Math.PI) / 180 };
   ctx.cart.reset(g.start.x, g.start.z, g.start.heading);
   // Title backdrop: a slow low orbit around the family's cart on the Pincio, with Rome beyond.
-  ctx.camRig.setMode('title', { x: g.start.x, z: g.start.z, r: 15, h: 4.5, lookY: 2, a: g.start.heading + Math.PI * 0.7, speed: 0.05 });
+  // camera on the park side, swaying gently while looking west over the balustrade to the domes
+  ctx.camRig.setMode('title', { x: g.start.x, z: g.start.z, r: 12, h: 3.5, a: 0, arc: 0.8, speed: 0.12, lookX: g.start.x - 20, lookZ: g.start.z, lookY: 5 });
   ctx.camRig.snap();
   g.setState('title');
   if (params.get('state') === 'play' || !loaded.has('ui')) g.begin();
@@ -154,6 +166,28 @@ async function boot(hotData) {
   }
   let fpsAcc = 0, fpsN = 0, fps = 0;
 
+  // Fog culling: meshes wholly beyond the fog are moved to layer 1, which neither the camera nor the
+  // shadow camera renders. Layers leave each module's own `visible` toggling untouched.
+  const fogCull = [];
+  scene.traverse((o) => {
+    if (!(o.isMesh || o.isPoints) || o.isSkinnedMesh || !o.frustumCulled || o.userData.noFogCull) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    if (mats.some((m) => !m || m.fog === false)) return;
+    if (o.isInstancedMesh && !o.boundingSphere) o.computeBoundingSphere();
+    const sphere = o.isInstancedMesh ? o.boundingSphere : (o.geometry.boundingSphere || (o.geometry.computeBoundingSphere(), o.geometry.boundingSphere));
+    if (sphere) fogCull.push([o, sphere]);
+  });
+  const cullCentre = new THREE.Vector3();
+  let cullTick = 0;
+  function updateFogCull() {
+    const far = scene.fog.far + 5, cp = camera.position;
+    for (const [o, sphere] of fogCull) {
+      cullCentre.copy(sphere.center).applyMatrix4(o.matrixWorld);
+      const r = sphere.radius * o.matrixWorld.getMaxScaleOnAxis();
+      o.layers.set(cullCentre.distanceTo(cp) - r > far ? 1 : 0);
+    }
+  }
+
   function step(dt) {
     ctx.time += dt;
     keyboard.update();
@@ -169,10 +203,18 @@ async function boot(hotData) {
     const c = ctx.cart.position;
     sun.target.position.set(c.x, c.y, c.z);
     sun.position.set(c.x + sunDir.x * 120, c.y + sunDir.y * 120, c.z + sunDir.z * 120);
+    if (cullTick++ % 6 === 0) updateFogCull();
   }
 
-  let last = performance.now();
+  // Frame pacing: at most 60 fps while driving (120 Hz phones would double the GPU work for
+  // nothing), 30 fps behind the title menus, and a trickle while paused or in the background.
+  let last = performance.now(), lastRender = 0;
   function frame(now) {
+    requestAnimationFrame(frame);
+    const st = g.state;
+    const minGap = st === 'playing' || st === 'stop' || st === 'finished' ? 15.5 : st === 'paused' ? 250 : 32;
+    if (now - lastRender < minGap) return;
+    lastRender = now;
     const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
     last = now;
     step(dt);
@@ -185,7 +227,6 @@ async function boot(hotData) {
       const p = ctx.cart.position;
       stats.textContent = `${fps.toFixed(0)} fps  ${quality.tier} x${quality.pixelRatio}\ncalls ${info.calls}  tris ${(info.triangles / 1000).toFixed(0)}k\n${g.state}  cart ${p.x.toFixed(1)},${p.z.toFixed(1)}  v ${ctx.cart.speed.toFixed(1)}`;
     }
-    requestAnimationFrame(frame);
   }
 
   // Test hooks: advance the simulation without waiting for real frames.
@@ -207,6 +248,13 @@ async function boot(hotData) {
 
   // Keep progress when the page is hot-updated by the artifact viewer.
   window.claude?.hot?.snapshot?.(() => g.snapshot());
+
+  // Compile every shader now (hidden things too: celebrations, far landmarks) so play never hitches.
+  const hidden = [];
+  scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+  try { await renderer.compileAsync(scene, camera); } catch { renderer.compile(scene, camera); }
+  for (const o of hidden) o.visible = false;
+  updateFogCull();
 
   progress(1);
   const bootEl = document.getElementById('boot');

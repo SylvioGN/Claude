@@ -26,12 +26,55 @@ export function createCameraRig(ctx) {
     return aspect < 1 ? 72 : aspect < 1.5 ? 62 : 55; // portrait phones need a wider view
   }
 
+  // Choose the photo camera once per stop: an authored view if the landmark module gave one,
+  // otherwise the clearest of a few side-on angles that frame the cart and the landmark together.
+  const BLOCKERS = new Set(['tree', 'building', 'lamp', 'statue', 'wall', 'hedge', 'sign', 'rock']);
+  function blocked(ax, az, bx, bz) {
+    const L = Math.hypot(bx - ax, bz - az);
+    let hits = 0;
+    for (let s = 1; s < L; s += 1.5) {
+      const x = ax + ((bx - ax) * s) / L, z = az + ((bz - az) * s) / L;
+      ctx.colliders.query(x, z, 1, (sh) => {
+        if (!BLOCKERS.has(sh.tag)) return;
+        if (sh.type === 0) { if (Math.hypot(x - sh.x, z - sh.z) < sh.r + 0.4) hits++; }
+        else {
+          const sx = sh.bx - sh.ax, sz = sh.bz - sh.az, L2 = sx * sx + sz * sz || 1;
+          const u = clamp(((x - sh.ax) * sx + (z - sh.az) * sz) / L2, 0, 1);
+          if (Math.hypot(x - sh.ax - sx * u, z - sh.az - sz * u) < sh.pad + 0.4) hits++;
+        }
+      });
+    }
+    return hits;
+  }
+  function photoShot(ph) {
+    if (ph.view) return { cam: ph.view.cam, look: ph.view.look, fov: ph.view.fov };
+    const H = ctx.terrain.heightAt;
+    const { cartX, cartZ, cartY, lmX, lmZ, lmY = 8 } = ph;
+    let dx = lmX - cartX, dz = lmZ - cartZ;
+    const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+    const dist = clamp(0.5 * L + 9, 11, 22);
+    const mid = Math.min(L, 24) * 0.45;
+    const look = [cartX + dx * mid, cartY + Math.min(lmY, 10) * 0.45 + 1, cartZ + dz * mid];
+    let best = null;
+    for (const th of [0.7, -0.7, 1.0, -1.0, 0.45, -0.45, 1.3, -1.3]) {
+      const c = Math.cos(th), s = Math.sin(th);
+      const ox = -dx * c + dz * s, oz = -dz * c - dx * s;
+      const x = cartX + ox * dist, z = cartZ + oz * dist;
+      if (!ctx.terrain.isInside(x, z)) continue;
+      const tx = cartX + dx * L * 0.75, tz = cartZ + dz * L * 0.75; // stop short of the landmark's own walls
+      const score = blocked(x, z, tx, tz) * 2 + blocked(x, z, cartX, cartZ) * 3 + Math.abs(th) * 0.5;
+      if (!best || score < best.score) best = { score, cam: [x, Math.max(cartY + 3.4, H(x, z) + 1.6), z] };
+    }
+    if (!best) best = { cam: [cartX - dx * dist, cartY + 3.4, cartZ - dz * dist] };
+    return { cam: best.cam, look, fov: 58 };
+  }
+
   const rig = {
     get mode() { return mode; },
     setMode(m, opts = {}) {
       if (debugCam && m !== 'debug') return; // ?cam= keeps the fixed debug view
       mode = m;
-      if (m === 'title' && opts.x !== undefined) orbit = { ...orbit, ...opts };
+      if (m === 'title' && opts.x !== undefined) orbit = { r: 40, h: 18, a: 0, speed: 0.06, ...opts };
       if (m === 'photo') photo = opts;
       if (m === 'chase' && opts.snap) rig.snap();
     },
@@ -54,8 +97,10 @@ export function createCameraRig(ctx) {
         const fx = Math.sin(h), fz = Math.cos(h);
         const sp = Math.abs(cart.speed || 0);
         const portrait = cam.aspect < 1;
-        const back = (portrait ? 11.5 : 9.5) + sp * 0.12;
-        const up = (portrait ? 5.6 : 4.4) + sp * 0.03;
+        // close enough that the family on board is the star of the screen
+        const back = (portrait ? 10 : 8) + sp * 0.09;
+        const up = (portrait ? 5 : 3.9) + sp * 0.025;
+        k = 1 - Math.exp(-dt * 6);
         const cx = cart.position.x, cz = cart.position.z, cy = cart.position.y;
         wantPos.set(cx - fx * back, cy + up, cz - fz * back);
         const ground = H(wantPos.x, wantPos.z) + 1.6;
@@ -63,26 +108,23 @@ export function createCameraRig(ctx) {
         wantLook.set(cx + fx * 5, cy + 1.6, cz + fz * 5);
         cam.fov += (baseFov() + sp * 0.35 - cam.fov) * k;
       } else if (mode === 'photo' && photo) {
-        // Side-on family photo with the landmark behind the cart, like the real snapshot.
-        const { cartX, cartZ, cartY, lmX, lmZ, lmY = 6 } = photo;
-        let dx = lmX - cartX, dz = lmZ - cartZ;
-        const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
-        const t = (ctx.time - (photo.t0 ?? ctx.time));
-        const swing = Math.sin(Math.min(t, 3) * 0.35) * 0.35;
-        const ox = -dx * Math.cos(swing) + dz * Math.sin(swing), oz = -dz * Math.cos(swing) - dx * Math.sin(swing);
-        const dist = 11;
-        wantPos.set(cartX + ox * dist, cartY + 3.2, cartZ + oz * dist);
-        const ground = H(wantPos.x, wantPos.z) + 1.5;
-        if (wantPos.y < ground) wantPos.y = ground;
-        wantLook.set(cartX + dx * Math.min(L, 18) * 0.45, cartY + Math.min(lmY, 10) * 0.35 + 1.2, cartZ + dz * Math.min(L, 18) * 0.45);
-        k = 1 - Math.exp(-dt * 2.2);
-        cam.fov += (58 - cam.fov) * k;
+        // Holiday snapshot: the family in the cart in front, the landmark behind.
+        if (!photo.shot) photo.shot = photoShot(photo);
+        const { cam: c0, look: l0 } = photo.shot;
+        const t = ctx.time - (photo.t0 ?? ctx.time);
+        const settle = Math.max(0, 1 - t / 1.2); // gentle push-in that is still by the snapshot
+        wantPos.set(c0[0] + (c0[0] - l0[0]) * 0.12 * settle, c0[1] + 0.6 * settle, c0[2] + (c0[2] - l0[2]) * 0.12 * settle);
+        wantLook.set(l0[0], l0[1], l0[2]);
+        k = 1 - Math.exp(-dt * 3);
+        cam.fov += ((photo.shot.fov || 58) - cam.fov) * k;
       } else {
-        // title: slow orbit around a scenic spot
-        orbit.a += dt * orbit.speed;
-        const ox = orbit.x + Math.cos(orbit.a) * orbit.r, oz = orbit.z + Math.sin(orbit.a) * orbit.r;
-        wantPos.set(ox, Math.max(H(ox, oz) + 4, H(orbit.x, orbit.z) + orbit.h), oz);
-        wantLook.set(orbit.x, H(orbit.x, orbit.z) + (orbit.lookY ?? 4), orbit.z);
+        // title: a slow orbit (or a ping-pong arc when orbit.arc is set) around a scenic spot
+        orbit.t = (orbit.t || 0) + dt;
+        const a = orbit.arc ? orbit.a + orbit.arc * Math.sin(orbit.t * orbit.speed) : (orbit.a += dt * orbit.speed);
+        const ox = orbit.x + Math.cos(a) * orbit.r, oz = orbit.z + Math.sin(a) * orbit.r;
+        wantPos.set(ox, Math.max(H(ox, oz) + 2, H(orbit.x, orbit.z) + orbit.h), oz);
+        const lx = orbit.lookX ?? orbit.x, lz = orbit.lookZ ?? orbit.z;
+        wantLook.set(lx, H(orbit.x, orbit.z) + (orbit.lookY ?? 4), lz);
         k = 1 - Math.exp(-dt * 1.5);
         cam.fov += (baseFov() + 4 - cam.fov) * k;
       }

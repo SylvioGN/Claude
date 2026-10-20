@@ -68,7 +68,11 @@ export function createGame(ctx, hotData = null) {
     state: 'loading',
     stops,
     medals: MEDALS,
-    score: { gelato: saved.gelato || 0, coins: 0, pinecones: saved.pinecones || 0, bumps: 0, ...(hotData?.score || {}) },
+    score: { gelato: saved.gelato || 0, pinecones: saved.pinecones || 0, bumps: 0, ...(hotData?.score || {}) },
+    // Stars on the finish screen: one for finishing, one for gelato, one for careful driving
+    // (only hard knocks count as bumps, and never in the first seconds after a photo stop).
+    starRules: { gelato: 12, bumps: 25 },
+    target: null,
     settings: { ...settingsDefault, ...(saved.settings || {}), ...(saved.settings?.langChosen ? {} : { lang: 'en' }) },
     start: { x: startAnchor.x + START.offsetX, z: startAnchor.z + START.offsetZ, heading: START.heading },
     currentStop: null,
@@ -104,15 +108,26 @@ export function createGame(ctx, hotData = null) {
       else if (!on && game.state === 'paused') game.setState('playing');
     },
 
-    // Nearest unvisited stop from the cart (or from the start when there is no cart).
+    // The stop the guide points at. It stays the same until it is visited, then the closest
+    // unvisited stop (by route length along the avenues when the guide is loaded) takes over.
     nextStop() {
+      if (game.target && !game.target.visited) return game.target;
       const px = ctx.cart?.position.x ?? game.start.x, pz = ctx.cart?.position.z ?? game.start.z;
+      const route = ctx.modules.guide?.findRoute;
       let best = null, bd = Infinity;
       for (const s of stops) {
         if (s.visited) continue;
-        const d = Math.hypot(s.spotX - px, s.spotZ - pz);
+        let d = Math.hypot(s.spotX - px, s.spotZ - pz);
+        if (route && d < bd * 1.6) {
+          const pts = route(px, pz, s.spotX, s.spotZ);
+          if (pts && pts.length > 1) {
+            d = 0;
+            for (let i = 1; i < pts.length; i++) d += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+          }
+        }
         if (d < bd) { bd = d; best = s; }
       }
+      game.target = best;
       return best;
     },
 
@@ -121,10 +136,12 @@ export function createGame(ctx, hotData = null) {
       game._autoClose = 0;
       game.currentStop = stop;
       const c = ctx.cart || { position: { x: stop.spotX, y: 0, z: stop.spotZ } };
+      // Landmarks with an authored postcard view park the cart on its spot for the photo.
+      if (stop.view && ctx.cart) ctx.cart.reset(stop.spotX, stop.spotZ, stop.view.heading);
       c.freeze?.(true);
       ctx.camRig.setMode('photo', {
         cartX: c.position.x, cartZ: c.position.z, cartY: c.position.y,
-        lmX: stop.x, lmZ: stop.z, lmY: 8, t0: ctx.time,
+        lmX: stop.x, lmZ: stop.z, lmY: 8, t0: ctx.time, view: stop.view || null,
       });
       game.setState('stop');
       ctx.events.emit('stopReached', { id: stop.id, index: game.visitedCount, total: stops.length });
@@ -138,8 +155,12 @@ export function createGame(ctx, hotData = null) {
       if (game.state !== 'stop') return;
       const stop = game.currentStop;
       game.currentStop = null;
+      game.turnTowardNext(stop);
       ctx.cart?.freeze?.(false);
-      ctx.camRig.setMode('chase');
+      ctx.camRig.setMode('chase', { snap: true });
+      // auto-gas waits for the player's first touch so nobody drives into the monument
+      game._holdAuto = true;
+      game._closedAt = ctx.time;
       ctx.events.emit('stopClosed', { id: stop?.id });
       if (game.visitedCount === stops.length && !game._celebrated) {
         game._celebrated = true;
@@ -152,13 +173,28 @@ export function createGame(ctx, hotData = null) {
       }
     },
 
+    // Point the cart along the route to the next stop (or away from the landmark it just visited).
+    turnTowardNext(stop) {
+      const c = ctx.cart;
+      if (!c) return;
+      const x = c.position.x, z = c.position.z;
+      let hx = x - (stop?.x ?? x), hz = z - (stop?.z ?? z + 1);
+      const next = game.nextStop();
+      const pts = next && ctx.modules.guide?.findRoute?.(x, z, next.spotX, next.spotZ);
+      if (pts) {
+        const ahead = pts.find((p) => Math.hypot(p[0] - x, p[1] - z) > 6) || pts[pts.length - 1];
+        if (ahead) { hx = ahead[0] - x; hz = ahead[1] - z; }
+      } else if (next) { hx = next.spotX - x; hz = next.spotZ - z; }
+      if (Math.hypot(hx, hz) > 0.01) c.reset(x, z, Math.atan2(hx, hz));
+    },
+
     // From the 'finished' screen back to free driving.
     keepDriving() { if (game.state === 'finished') game.setState('playing'); },
 
     resetTour() {
       for (const s of stops) s.visited = false;
       game.score.gelato = 0; game.score.bumps = 0; game.score.pinecones = 0;
-      game.tourTime = 0; game._celebrated = false;
+      game.tourTime = 0; game._celebrated = false; game.target = null;
       game.persist();
       ctx.events.emit('tourReset', {});
     },
@@ -170,26 +206,24 @@ export function createGame(ctx, hotData = null) {
       ctx.events.emit('settings', { ...game.settings });
     },
 
-    persist() {
-      save({
+    // What is saved between visits (also handed to a hot update when storage is blocked).
+    saveData() {
+      return {
         visited: stops.filter((s) => s.visited).map((s) => s.id),
         gelato: game.score.gelato, pinecones: game.score.pinecones,
         tourTime: game.tourTime, finishedOnce: game.finishedOnce, settings: game.settings,
-      });
+      };
     },
+    persist() { save(game.saveData()); },
 
-    // Stars for the end screen: careful driving and gelato hunting.
     stars() {
-      let s = 1;
-      if (game.score.bumps < 12) s++;
-      if (game.score.gelato >= 15) s++;
-      return s;
+      return 1 + (game.score.gelato >= game.starRules.gelato ? 1 : 0) + (game.score.bumps <= game.starRules.bumps ? 1 : 0);
     },
 
     snapshot() {
       const c = ctx.cart;
       return {
-        save: load(), score: { ...game.score },
+        save: game.saveData(), score: { ...game.score },
         cart: c && game._placed ? { x: c.position.x, z: c.position.z, heading: c.heading } : null,
       };
     },
@@ -202,7 +236,11 @@ export function createGame(ctx, hotData = null) {
       inp.throttle = clamp(Math.max(k.throttle || 0, t.throttle || 0), 0, 1);
       inp.brake = clamp(Math.max(k.brake || 0, t.brake || 0), 0, 1);
       const honk = !!(k.honk || t.honk);
-      if (game.state === 'playing' && game.settings.easy && inp.brake === 0) inp.throttle = Math.max(inp.throttle, 0.6);
+      if (game._holdAuto && (inp.steer !== 0 || inp.throttle > 0 || inp.brake > 0)) game._holdAuto = false;
+      if (game.state === 'playing' && game.settings.easy && inp.brake === 0 && !game._holdAuto) {
+        // auto-gas, eased off while steering hard so corners and U-turns stay tight
+        inp.throttle = Math.max(inp.throttle, Math.abs(inp.steer) > 0.5 ? 0.3 : 0.6);
+      }
       if (game.state !== 'playing') { inp.throttle = 0; inp.brake = 0; inp.steer = 0; }
       if (honk && !game._honkHeld && game.state === 'playing') ctx.events.emit('honk', {});
       game._honkHeld = honk;
@@ -244,10 +282,11 @@ export function createGame(ctx, hotData = null) {
         ctx.events.emit('boost', { on: true });
       }
     } else if (e.kind === 'pinecone') game.score.pinecones += 1;
-    else if (e.kind === 'coin') game.score.coins += e.value || 1;
     game.persist();
   });
-  ctx.events.on('bump', (e) => { if ((e.strength || 0) > 0.25) game.score.bumps++; });
+  ctx.events.on('bump', (e) => {
+    if ((e.strength || 0) > 0.6 && ctx.time - (game._closedAt ?? -99) > 3) game.score.bumps++;
+  });
 
   return game;
 }

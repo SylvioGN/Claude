@@ -2,13 +2,15 @@
 //
 // Event names used across modules (payload in braces):
 //   'state'        {from, to}                game state changed: loading|title|playing|stop|finished|paused
-//   'collect'      {kind, x, z, value}       kind: 'gelato' | 'coin' | 'pinecone' | 'star'
+//   'collect'      {kind, x, z, value}       kind: 'gelato' | 'pinecone'
 //   'bump'         {kind, strength, x, z}    cart hit something; strength 0..1; kind = collider tag
 //   'honk'         {}                         player pressed the horn
 //   'splash'       {x, z}                     cart drove through a puddle / into water edge
 //   'stopReached'  {id, index, total}         a tour stop was reached (photo moment starts)
 //   'stopClosed'   {id}                       the photo card was dismissed, driving resumes
 //   'tourComplete' {}                         every tour stop visited
+//   'medal'        {id, count}                bronze / silver / gold after 4 / 8 / 12 stops
+//   'tourReset'    {}                         the player started a new tour
 //   'boost'        {on}                       gelato turbo started / ended
 //   'surface'      {type}                     cart moved onto 'path' | 'grass' | 'plaza' | 'sand'
 //   'animal'       {kind, x, z}               an animal reacted (pigeons fly, duck quacks...) - for sounds

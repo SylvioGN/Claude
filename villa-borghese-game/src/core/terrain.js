@@ -3,7 +3,7 @@
 // terrain mesh (built by modules/world.js from terrain.H) line up.
 import * as MAP from '../data/park.js';
 import { fbm2 } from './rng.js';
-import { pointInRing, closestOnSegment, ringBBox, smoothstep, clamp } from './geo.js';
+import { pointInRing, closestOnSegment, segDist2, ringBBox, smoothstep, clamp } from './geo.js';
 
 export const SURF = { GRASS: 0, PATH: 1, PLAZA: 2, WATER: 3, OUTSIDE: 4, FOREST: 5, SAND: 6 };
 export const SURF_NAME = ['grass', 'path', 'plaza', 'water', 'outside', 'forest', 'sand'];
@@ -36,8 +36,8 @@ export function createTerrain() {
       if (pointInRing(x, z, bnd)) { outsideDist[j * cnx + i] = 0; continue; }
       let best = Infinity;
       for (let k = 0, m = bnd.length - 1; k < bnd.length; m = k++) {
-        const c = closestOnSegment(x, z, bnd[m][0], bnd[m][1], bnd[k][0], bnd[k][1]);
-        if (c.d2 < best) best = c.d2;
+        const d2 = segDist2(x, z, bnd[m][0], bnd[m][1], bnd[k][0], bnd[k][1]);
+        if (d2 < best) best = d2;
       }
       outsideDist[j * cnx + i] = Math.sqrt(best);
     }
@@ -54,8 +54,8 @@ export function createTerrain() {
   const muroDist = (x, z) => {
     let best = Infinity;
     for (let k = 1; k < muro.length; k++) {
-      const c = closestOnSegment(x, z, muro[k - 1][0], muro[k - 1][1], muro[k][0], muro[k][1]);
-      if (c.d2 < best) best = c.d2;
+      const d2 = segDist2(x, z, muro[k - 1][0], muro[k - 1][1], muro[k][0], muro[k][1]);
+      if (d2 < best) best = d2;
     }
     return Math.sqrt(best);
   };
@@ -74,8 +74,8 @@ export function createTerrain() {
       let edge = Infinity;
       for (const r of [lake.r, ...(lake.h || [])]) {
         for (let k = 0, m = r.length - 1; k < r.length; m = k++) {
-          const c = closestOnSegment(x, z, r[m][0], r[m][1], r[k][0], r[k][1]);
-          if (c.d2 < edge) edge = c.d2;
+          const d2 = segDist2(x, z, r[m][0], r[m][1], r[k][0], r[k][1]);
+          if (d2 < edge) edge = d2;
         }
       }
       edge = Math.sqrt(edge);
@@ -119,15 +119,25 @@ export function createTerrain() {
   const sx0 = Math.floor(B.minX) - 8, sz0 = Math.floor(B.minZ) - 8;
   const snx = Math.ceil(B.maxX - sx0) + 9, snz = Math.ceil(B.maxZ - sz0) + 9;
   const S = new Uint8Array(snx * snz).fill(SURF.OUTSIDE);
+  // Scanline fill (even-odd, sampling cell centres): one pass over the ring's edges per row.
+  const xs = [];
   const fillRing = (ring, code, onlyOver = null) => {
     const bb = ringBBox(ring);
-    const i0 = Math.max(0, Math.floor((bb.minX - sx0) / SG)), i1 = Math.min(snx - 1, Math.ceil((bb.maxX - sx0) / SG));
     const j0 = Math.max(0, Math.floor((bb.minZ - sz0) / SG)), j1 = Math.min(snz - 1, Math.ceil((bb.maxZ - sz0) / SG));
     for (let j = j0; j <= j1; j++) {
-      for (let i = i0; i <= i1; i++) {
-        const idx = j * snx + i;
-        if (onlyOver !== null && S[idx] !== onlyOver) continue;
-        if (pointInRing(sx0 + (i + 0.5) * SG, sz0 + (j + 0.5) * SG, ring)) S[idx] = code;
+      const z = sz0 + (j + 0.5) * SG;
+      xs.length = 0;
+      for (let k = 0, m = ring.length - 1; k < ring.length; m = k++) {
+        const za = ring[m][1], zb = ring[k][1];
+        if ((za > z) !== (zb > z)) xs.push(ring[m][0] + ((z - za) * (ring[k][0] - ring[m][0])) / (zb - za));
+      }
+      xs.sort((a, b) => a - b);
+      for (let n = 0; n + 1 < xs.length; n += 2) {
+        const i0 = Math.max(0, Math.ceil((xs[n] - sx0) / SG - 0.5)), i1 = Math.min(snx - 1, Math.floor((xs[n + 1] - sx0) / SG - 0.5));
+        for (let i = i0; i <= i1; i++) {
+          const idx = j * snx + i;
+          if (onlyOver === null || S[idx] === onlyOver) S[idx] = code;
+        }
       }
     }
   };
@@ -159,8 +169,7 @@ export function createTerrain() {
         for (let i = i0; i <= i1; i++) {
           const idx = j * snx + i;
           if (S[idx] === SURF.OUTSIDE && p.k !== 'bridge') continue;
-          const c = closestOnSegment(sx0 + (i + 0.5) * SG, sz0 + (j + 0.5) * SG, ax, az, bx, bz);
-          if (c.d2 <= r2) S[idx] = SURF.PATH;
+          if (segDist2(sx0 + (i + 0.5) * SG, sz0 + (j + 0.5) * SG, ax, az, bx, bz) <= r2) S[idx] = SURF.PATH;
         }
       }
       // segment hash (cells reach 12 units beyond the segment)
