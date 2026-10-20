@@ -118,6 +118,7 @@ export function createGame(ctx, hotData = null) {
 
     reachStop(stop) {
       stop.visited = true;
+      game._autoClose = 0;
       game.currentStop = stop;
       const c = ctx.cart || { position: { x: stop.spotX, y: 0, z: stop.spotZ } };
       c.freeze?.(true);

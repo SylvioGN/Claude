@@ -6,6 +6,7 @@
 //   node test/shot.mjs --portrait          (390x844 instead of 844x390 phone landscape)
 //   node test/shot.mjs --eval="window.__game.ctx.game.score"   (prints the value)
 //   node test/shot.mjs --click="#ui .play"  (tap a UI element before the shot)
+//   node test/shot.mjs --canvas           (3D canvas only, no DOM overlay; fastest)
 //
 // Prints console errors, failed modules and renderer stats. Exit code 1 when the page threw.
 import { createRequire } from 'node:module';
@@ -33,6 +34,13 @@ const browser = await playwright.chromium.launch({
   args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'],
 });
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: Number(args.dpr || 1), hasTouch: true, isMobile: !!args.mobile });
+page.setDefaultTimeout(240000);
+// Once the game is ready, stop the free-running frame loop: SwiftShader frames are slow and a busy
+// loop starves screenshots. Frames are then rendered on demand by __game.render() / simulate().
+await page.addInitScript(() => {
+  const raf = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = (cb) => (window.__game && window.__game.ready && !window.__liveFrames ? setTimeout(() => cb(performance.now()), 250) : raf(cb));
+});
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`); });
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
@@ -51,8 +59,10 @@ if (args.eval) {
   console.log('eval:', v);
 }
 await page.waitForTimeout(Number(args.wait || 600));
-await page.evaluate(() => window.__game.render());
-await page.screenshot({ path: out });
+// grab the WebGL canvas right after rendering, then let Playwright compose the DOM overlay on top
+const png = await page.evaluate(() => { window.__game.render(); return window.__game.ctx.renderer.domElement.toDataURL('image/png'); });
+if (args.canvas) fs.writeFileSync(out, Buffer.from(png.split(',')[1], 'base64'));
+else await page.screenshot({ path: out });
 const info = await page.evaluate(() => window.__game.info());
 console.log(JSON.stringify({ out: path.relative(ROOT, out), bootMs, ...info }, null, 1));
 if (errors.length) console.log('console:\n' + [...new Set(errors)].slice(0, 30).join('\n'));

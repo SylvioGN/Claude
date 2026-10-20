@@ -29,6 +29,7 @@ export function createCameraRig(ctx) {
   const rig = {
     get mode() { return mode; },
     setMode(m, opts = {}) {
+      if (debugCam && m !== 'debug') return; // ?cam= keeps the fixed debug view
       mode = m;
       if (m === 'title' && opts.x !== undefined) orbit = { ...orbit, ...opts };
       if (m === 'photo') photo = opts;
