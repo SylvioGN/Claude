@@ -67,7 +67,7 @@ async function boot(hotData) {
   colliders.addRing(MAP.BOUNDARY, 'boundary', null, 0.3);
   for (const h of MAP.HOLES) colliders.addRing(h, 'boundary', null, 0.3);
   for (const w of MAP.WATER) {
-    colliders.addRing(w.r, w.k === 'fountain' ? 'fountain' : 'water', w, 0.4);
+    colliders.addRing(w.c || w.r, w.k === 'fountain' ? 'fountain' : 'water', w, 0.4);
     for (const hr of w.h || []) colliders.addRing(hr, 'water', w, 0.4);
   }
   progress(0.2);

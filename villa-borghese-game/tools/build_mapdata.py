@@ -53,9 +53,11 @@ if bridge_line is not None:
     L = math.hypot(dx, dz)
     ux, uz = dx / L, dz / L
     ext = LineString([(x0 - ux * 30, z0 - uz * 30), (x1 + ux * 30, z1 + uz * 30)])
-    play = unary_union([play, ext.buffer(5, cap_style=2)])
+    # a corridor a little wider than the deck, flared at both ends so the cart can turn onto it
+    flares = [Point(x0, z0).buffer(9), Point(x1, z1).buffer(9)]
+    play = unary_union([play, ext.buffer(8, cap_style=2)] + flares)
 
-play = play.buffer(1.5).buffer(-1.5)
+play = play.buffer(6).buffer(-6)  # round off inside corners the cart could snag on
 parts = list(play.geoms) if play.geom_type == 'MultiPolygon' else [play]
 parts.sort(key=lambda g: -g.area)
 main = parts[0]
@@ -100,8 +102,12 @@ for p in d['paths']:
         if p['bridge']:
             kind = 'bridge'
             w = 7.0
+            lake_pg = [poly(wt['ring']) for wt in d['water'] if wt['name'].startswith('Laghetto')]
+            if lake_pg and lake_pg[0].contains(s.centroid):
+                continue  # service footbridge to the temple island: not part of the ride
         paths.append({'n': name, 'k': kind, 'w': w, 'p': [S(c) for c in s.simplify(1.0).coords]})
 
+bridge_lines = unary_union([LineString([(a / SCALE, b / SCALE) for a, b in p['p']]).buffer(p['w'] / SCALE / 2 + 4) for p in paths if p['k'] == 'bridge'])
 path_lines = unary_union([LineString([(a / SCALE, b / SCALE) for a, b in p['p']]).buffer(p['w'] / SCALE / 2 + 2.5) for p in paths])
 
 plazas = []
@@ -128,6 +134,11 @@ for w in d['water']:
     else:
         kind = 'pond'
     item = {'n': w['name'], 'k': kind, 'r': ring_out(pg.exterior.coords)}
+    if kind == 'lake':
+        # collision outline a little inside the shore so lakeside footpaths stay drivable
+        inner_pg = Polygon(pg.exterior).buffer(-2.2)
+        if inner_pg.geom_type == 'Polygon' and not inner_pg.is_empty:
+            item['c'] = ring_out(inner_pg.simplify(0.5).exterior.coords)
     if w.get('holes'):
         item['h'] = [ring_out(h) for h in w['holes']]
     water.append(item)
@@ -229,7 +240,8 @@ for b in d['barriers']:
         continue
     if kind in ('citywalls', 'city_wall'):
         kind = 'city_wall'
-    cut = ls.difference(path_lines) if kind != 'city_wall' else ls
+    # garden walls get gaps wherever a path crosses; the Aurelian walls only where a bridge passes over them
+    cut = ls.difference(path_lines) if kind != 'city_wall' else ls.difference(bridge_lines)
     segs = cut.geoms if hasattr(cut, 'geoms') else [cut]
     for s in segs:
         if s.geom_type != 'LineString' or s.length < 2:

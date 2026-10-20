@@ -69,7 +69,7 @@ src/modules/*.js         feature modules (see below)
 | `NOGO` | fenced areas next to it: `{k: 'zoo' \| 'galoppatoio' \| 'villamedici', r: ring}` |
 | `PATHS` | `{n: name, k: 'viale' \| 'footway' \| 'path' \| 'bridge', w: width, p: [[x, z], ...]}` |
 | `PLAZAS` | paved squares `{n, r}` |
-| `WATER` | `{n, k: 'lake' \| 'fountain' \| 'pond', r, h?: [island rings]}` |
+| `WATER` | `{n, k: 'lake' \| 'fountain' \| 'pond', r, h?: [island rings], c?: collision ring (lake: 1.2 inside the shore)}` |
 | `BUILDINGS` | ordinary buildings `{n, h: height, r: footprint}` (landmarks are not in here) |
 | `FOREST`, `LAWNS` | woods (rings) and lawns / gardens / flower beds `{k, r}` |
 | `WALLS` | `{k: 'city_wall' \| 'wall' \| 'fence' \| 'hedge' \| 'retaining_wall', p: polyline}` (gaps already cut where paths cross) |
