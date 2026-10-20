@@ -369,6 +369,10 @@ export const CSS = String.raw`
   .cart-art { display: none; }
   .tile { min-height: 76px; }
 }
+@media (orientation: landscape) and (max-width: 760px) {
+  .finish .row .vb-btn { font-size: 20px; padding: 0 18px; }
+  .finish .row .vb-btn.big { min-height: 64px; font-size: 24px; padding: 0 22px; }
+}
 /* short landscape phones: the photo card fits */
 @media (orientation: landscape) and (max-height: 400px) {
   .pinfo { padding: 10px 14px 12px; gap: 6px; }
