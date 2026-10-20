@@ -41,7 +41,9 @@ export function createGame(ctx, hotData = null) {
         c = closestOnSegment(anchor.x, anchor.z, s.ax, s.az, s.bx, s.bz);
       }
       if (!T.isInside(c.x, c.z)) continue;
-      const score = Math.sqrt(c.d2) + (s.kind === 'viale' ? 0 : 3);
+      // never inside the building itself (some footways run through courtyards)
+      if (ring && (pointInRing(c.x, c.z, ring) || distToRingEdge(c.x, c.z, ring) < 2.5)) continue;
+      const score = Math.sqrt(c.d2) + (s.kind === 'viale' ? 0 : 6);
       if (score < bestScore) { bestScore = score; best = c; }
     }
     return best ? { x: best.x, z: best.z } : { x: anchor.x, z: anchor.z };
