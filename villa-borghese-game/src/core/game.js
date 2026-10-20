@@ -60,7 +60,7 @@ export function createGame(ctx, hotData = null) {
 
   const startAnchor = MAP.ANCHORS[START.anchor];
   const settingsDefault = {
-    lang: LANGS.find((l) => (navigator.language || 'en').toLowerCase().startsWith(l)) || 'en',
+    lang: 'en', // English unless the player picks another language on the title screen
     sound: true, music: true, easy: true, driver: 0, names: {},
   };
 
@@ -69,7 +69,7 @@ export function createGame(ctx, hotData = null) {
     stops,
     medals: MEDALS,
     score: { gelato: saved.gelato || 0, coins: 0, pinecones: saved.pinecones || 0, bumps: 0, ...(hotData?.score || {}) },
-    settings: { ...settingsDefault, ...(saved.settings || {}) },
+    settings: { ...settingsDefault, ...(saved.settings || {}), ...(saved.settings?.langChosen ? {} : { lang: 'en' }) },
     start: { x: startAnchor.x + START.offsetX, z: startAnchor.z + START.offsetZ, heading: START.heading },
     currentStop: null,
     boostTime: 0,
@@ -164,6 +164,7 @@ export function createGame(ctx, hotData = null) {
     },
 
     setSettings(patch) {
+      if (patch.lang && patch.lang !== game.settings.lang) patch = { ...patch, langChosen: true };
       Object.assign(game.settings, patch);
       game.persist();
       ctx.events.emit('settings', { ...game.settings });

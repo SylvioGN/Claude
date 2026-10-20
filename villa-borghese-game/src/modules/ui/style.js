@@ -68,6 +68,11 @@ export const CSS = String.raw`
 .vb-title > * { pointer-events: auto; }
 .t-left { display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2.6vh, 16px); min-width: 0; }
 .logo { text-align: center; display: flex; flex-direction: column; align-items: center; }
+.logo .l0 {
+  font-weight: 800; font-size: clamp(17px, min(5.4vh, 3.4vw), 30px); line-height: 1; color: #fff; letter-spacing: .4px; margin-bottom: 2px;
+  text-shadow: 0 2px 0 var(--terra-d), 2px 0 0 var(--terra-d), -2px 0 0 var(--terra-d), 0 -2px 0 var(--terra-d),
+    0 4px 0 var(--terra-d), 0 6px 10px rgba(42,33,24,.3);
+}
 .logo .l1 {
   font-weight: 800; font-size: clamp(36px, min(12vh, 7.4vw), 66px); line-height: .92; color: #fff; letter-spacing: .5px;
   text-shadow: 0 3px 0 var(--terra-d), 3px 0 0 var(--terra-d), -3px 0 0 var(--terra-d), 0 -3px 0 var(--terra-d),
@@ -297,6 +302,7 @@ export const CSS = String.raw`
   .t-right { order: 2; }
   .t-left .play { order: 3; justify-self: center; }
   .t-prog { order: 4; }
+  .logo .l0 { font-size: clamp(18px, 5.6vw, 28px); }
   .logo .l1 { font-size: clamp(40px, 12.5vw, 64px); }
   .logo .l2 { font-size: clamp(20px, 6vw, 28px); }
   .drv { --d: clamp(60px, 17vw, 78px); }

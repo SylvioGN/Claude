@@ -167,7 +167,7 @@ export async function create(ctx) {
   const title = layer('vb-title');
   title.innerHTML = `
     <div class="t-left">
-      <div class="logo"><span class="l1">Villa Borghese</span><span class="l2" data-t="subtitle"></span></div>
+      <div class="logo"><span class="l0">Les Aventures de la</span><span class="l1">Famille Poutot</span><span class="l2">à la Villa Borghese</span></div>
       ${CART_ART}
       <button class="vb-btn green big play">${svgIcon('play')}<span data-t="play"></span></button>
       <div class="t-prog">
