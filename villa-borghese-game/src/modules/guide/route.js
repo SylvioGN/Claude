@@ -4,11 +4,12 @@
 import { closestOnSegment, pointInRing, distToRingEdge } from '../../core/geo.js';
 
 // Cost per unit of length: wide gravel avenues first, footways and dirt paths when they save time.
-const KIND_COST = { viale: 1, bridge: 1, footway: 1.12, path: 1.3, plaza: 1.05 };
 const OFF_PATH = 1.8;   // driving across the grass to reach an avenue
+const KIND_COST = { viale: 1, bridge: 1, footway: 1.12, path: 1.3, plaza: 1.05, grass: OFF_PATH };
 const CELL = 12;        // edge hash cell size
 
-export function buildRouteGraph(paths, { isInside = () => true, plazas = [], join = 1.5 } = {}) {
+// blocked(ax, az, bx, bz): true when a straight hop across the grass would hit a wall or water.
+export function buildRouteGraph(paths, { isInside = () => true, plazas = [], join = 1.5, blocked = () => false } = {}) {
   // --- 1. raw segments (inside the park only; bridges may leave the drivable outline)
   const segs = [];
   const ends = []; // polyline end points, joined to nearby segments (T junctions)
@@ -120,7 +121,52 @@ export function buildRouteGraph(paths, { isInside = () => true, plazas = [], joi
     for (let a = 0; a < near.length; a++) for (let b = a + 1; b < near.length; b++) link(near[a], near[b], 'plaza');
   }
 
-  // --- 5. edge hash for nearest-avenue queries
+  // --- 5. islands (garden paths, short loops): hop across the grass to the main network
+  const comp = new Int32Array(nx.length).fill(-1);
+  const members = [];
+  for (let n = 0; n < nx.length; n++) {
+    if (comp[n] >= 0) continue;
+    const list = [n], stack = [n];
+    comp[n] = members.length;
+    while (stack.length) {
+      for (const [v] of adj[stack.pop()]) if (comp[v] < 0) { comp[v] = members.length; list.push(v); stack.push(v); }
+    }
+    members.push(list);
+  }
+  const main = members.reduce((m, l, i) => (l.length > members[m].length ? i : m), 0);
+  const splitEdge = (ei, x, z) => {
+    const e = edges[ei], p = nx.length;
+    nx.push(x); nz.push(z); adj.push([]);
+    comp[p] = comp[e.a];
+    adj[e.a] = adj[e.a].filter((a) => a[0] !== e.b);
+    adj[e.b] = adj[e.b].filter((a) => a[0] !== e.a);
+    const kind = Object.keys(KIND_COST).find((k) => KIND_COST[k] === e.kf) || 'path';
+    edges.splice(ei, 1);
+    link(e.a, p, kind);
+    link(p, e.b, kind);
+    return p;
+  };
+  members.forEach((list, ci) => {
+    if (ci === main) return;
+    let best = null;
+    for (const n of list) {
+      for (let ei = 0; ei < edges.length; ei++) {
+        const e = edges[ei];
+        if (comp[e.a] !== main) continue;
+        const c = closestOnSegment(nx[n], nz[n], nx[e.a], nz[e.a], nx[e.b], nz[e.b]);
+        if (c.d2 > 45 * 45 || (best && c.d2 >= best.d2)) continue;
+        if (blocked(nx[n], nz[n], c.x, c.z)) continue;
+        best = { n, ei, x: c.x, z: c.z, d2: c.d2, t: c.t };
+      }
+    }
+    if (!best) return;
+    const e = edges[best.ei];
+    const p = best.t < 0.02 ? e.a : best.t > 0.98 ? e.b : splitEdge(best.ei, best.x, best.z);
+    link(best.n, p, 'grass');
+    for (const n of list) comp[n] = main;
+  });
+
+  // --- 6. edge hash for nearest-avenue queries
   const edgeGrid = new Map();
   edges.forEach((e, ei) => {
     cellsOf(Math.min(nx[e.a], nx[e.b]), Math.min(nz[e.a], nz[e.b]), Math.max(nx[e.a], nx[e.b]), Math.max(nz[e.a], nz[e.b]), (k) => {
