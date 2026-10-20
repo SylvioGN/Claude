@@ -509,7 +509,8 @@ export async function create(ctx) {
         b.visited = s.visited;
         b.flagT = 0;
       }
-      b.flagT += dt;
+      // the arrival flag waits until the souvenir photo is taken, so it never stands in the shot
+      b.flagT = state === 'stop' && s === game.currentStop ? 0 : b.flagT + dt;
       // on arrival the pillar sinks quickly, then the flag and the green tick pop up
       b.show += ((s.visited ? 0 : 1) - b.show) * (s.visited ? 1 - Math.exp(-dt * 5) : k);
       b.next += ((s === next ? 1 : 0) - b.next) * k;

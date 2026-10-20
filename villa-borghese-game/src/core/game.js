@@ -184,7 +184,14 @@ export function createGame(ctx, hotData = null) {
       if (pts) {
         const ahead = pts.find((p) => Math.hypot(p[0] - x, p[1] - z) > 6) || pts[pts.length - 1];
         if (ahead) { hx = ahead[0] - x; hz = ahead[1] - z; }
-      } else if (next) { hx = next.spotX - x; hz = next.spotZ - z; }
+      } else if (next) { hx = next.spotX - x; hz = next.spotZ - z; } else {
+        // tour finished: drive off along the avenue, in the direction leading away from the landmark
+        const np = T.nearestPath(x, z);
+        if (np) {
+          const s = np.dirX * hx + np.dirZ * hz >= 0 ? 1 : -1;
+          hx = np.dirX * s; hz = np.dirZ * s;
+        }
+      }
       if (Math.hypot(hx, hz) > 0.01) c.reset(x, z, Math.atan2(hx, hz));
     },
 

@@ -296,6 +296,7 @@ export function createObstacles(env) {
     const s = T.surfaceAt(x, z);
     if (s !== SURF.PATH && s !== SURF.PLAZA) return;
     if (pud.some((p) => Math.hypot(p.x - x, p.z - z) < 12)) return;
+    if (ctx.isReserved?.(x, z, r)) return; // keep souvenir-photo corridors clear
     pud.push({ x, z, r, sx: 1.2 + rnd() * 0.3, rot: rnd() * Math.PI, seed: rnd() * 10, cool: 0 });
   };
   for (const p of ctx.MAP.POIS) {
