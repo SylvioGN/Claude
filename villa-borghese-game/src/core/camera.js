@@ -82,7 +82,7 @@ export function createCameraRig(ctx) {
         orbit.a += dt * orbit.speed;
         const ox = orbit.x + Math.cos(orbit.a) * orbit.r, oz = orbit.z + Math.sin(orbit.a) * orbit.r;
         wantPos.set(ox, Math.max(H(ox, oz) + 4, H(orbit.x, orbit.z) + orbit.h), oz);
-        wantLook.set(orbit.x, H(orbit.x, orbit.z) + 4, orbit.z);
+        wantLook.set(orbit.x, H(orbit.x, orbit.z) + (orbit.lookY ?? 4), orbit.z);
         k = 1 - Math.exp(-dt * 1.5);
         cam.fov += (baseFov() + 4 - cam.fov) * k;
       }

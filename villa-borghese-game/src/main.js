@@ -130,7 +130,9 @@ async function boot(hotData) {
   const spawn = params.get('spawn')?.split(',').map(Number);
   if (spawn) g.start = { x: spawn[0], z: spawn[1], heading: ((spawn[2] || 0) * Math.PI) / 180 };
   ctx.cart.reset(g.start.x, g.start.z, g.start.heading);
-  ctx.camRig.setMode('title', { x: MAP.ANCHORS.terrazza.x + 10, z: MAP.ANCHORS.terrazza.z, r: 34, h: 14, a: 0 });
+  // Title backdrop: a slow low orbit around the family's cart on the Pincio, with Rome beyond.
+  ctx.camRig.setMode('title', { x: g.start.x, z: g.start.z, r: 15, h: 4.5, lookY: 2, a: g.start.heading + Math.PI * 0.7, speed: 0.05 });
+  ctx.camRig.snap();
   g.setState('title');
   if (params.get('state') === 'play' || !loaded.has('ui')) g.begin();
 
