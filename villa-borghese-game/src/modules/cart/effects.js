@@ -200,7 +200,10 @@ export function createBubble(ctx, parent) {
     cache.set(key, t);
     return t;
   };
-  const mat = new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false, fog: false });
+  // a placeholder map so the boot-time shader warm-up already builds the textured sprite program
+  const blank = new THREE.DataTexture(new Uint8Array(4), 1, 1);
+  blank.needsUpdate = true;
+  const mat = new THREE.SpriteMaterial({ map: blank, transparent: true, depthTest: false, depthWrite: false, fog: false });
   const sprite = new THREE.Sprite(mat);
   sprite.visible = false;
   sprite.renderOrder = 20;

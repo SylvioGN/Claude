@@ -339,8 +339,9 @@ export const CSS = String.raw`
   .next { height: auto; min-height: 50px; padding-top: 4px; padding-bottom: 4px; }
   .minimap { width: clamp(88px, 27vw, 124px); height: clamp(88px, 27vw, 124px); margin-left: auto; }
   .pcard { flex-direction: column; justify-content: center; gap: 12px; }
-  .polaroid { width: min(80vw, 340px); }
-  .pinfo { flex: 0 1 auto; width: min(92vw, 420px); }
+  .polaroid { width: min(80vw, 340px, calc((100vh - 470px) * 1.5 + 20px)); min-width: 180px; }
+  .pinfo { flex: 0 1 auto; width: min(92vw, 420px); min-height: 0; }
+  .pbtns { position: sticky; bottom: -16px; margin-bottom: -16px; padding: 8px 0 16px; background: inherit; }
   .pause-grid { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
   .pause-body { flex-direction: column; }
   .fact { width: auto; min-width: 0; }
@@ -388,6 +389,13 @@ export const CSS = String.raw`
   .counters .chip { height: 50px; font-size: 26px; }
 }
 
+@media (orientation: portrait) and (max-height: 760px) {
+  .pinfo h3 { font-size: 24px; }
+  .pinfo .facts li { font-size: 16px; }
+  .polaroid .cap { font-size: 18px; padding: 4px 4px 6px; }
+}
+.ctl.gas.nudge { animation: vb-nudge 1s ease-in-out infinite; }
+@keyframes vb-nudge { 50% { transform: scale(1.12); box-shadow: 0 0 0 10px rgba(124, 196, 74, .35); } }
 @keyframes vb-fade { from { opacity: 0; } }
 @keyframes vb-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 70% { transform: scale(.92); } 100% { transform: scale(1); } }
 @keyframes vb-rise { from { opacity: 0; transform: translateY(40px) scale(.94); } }

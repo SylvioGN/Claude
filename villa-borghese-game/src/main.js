@@ -140,6 +140,11 @@ async function boot(hotData) {
   const g = ctx.game;
   const spawn = params.get('spawn')?.split(',').map(Number);
   if (spawn) g.start = { x: spawn[0], z: spawn[1], heading: ((spawn[2] || 0) * Math.PI) / 180 };
+  else {
+    // face the first stop's photo spot (landmark modules may have moved it while building)
+    const first = g.stops[0];
+    g.start.heading = Math.atan2(first.spotX - g.start.x, first.spotZ - g.start.z);
+  }
   ctx.cart.reset(g.start.x, g.start.z, g.start.heading);
   // Title backdrop: a slow low orbit around the family's cart on the Pincio, with Rome beyond.
   // camera on the park side, swaying gently while looking west over the balustrade to the domes
@@ -255,6 +260,19 @@ async function boot(hotData) {
   if (renderer.extensions.has('KHR_parallel_shader_compile')) {
     try { await renderer.compileAsync(scene, camera); } catch { renderer.compile(scene, camera); }
   } else renderer.compile(scene, camera);
+  if (quality.shadows) {
+    // one shadow pass over the whole park so every caster's depth shader is built now, not mid-drive
+    const sc = sun.shadow.camera, keep = [sc.left, sc.right, sc.top, sc.bottom];
+    Object.assign(sc, { left: -480, right: 480, top: 480, bottom: -480, far: 1200 });
+    sc.updateProjectionMatrix();
+    sun.target.position.set(40, 0, -40);
+    sun.position.set(40 + sunDir.x * 400, sunDir.y * 400, -40 + sunDir.z * 400);
+    renderer.shadowMap.needsUpdate = true;
+    renderer.render(scene, camera);
+    [sc.left, sc.right, sc.top, sc.bottom] = keep;
+    sc.far = 320;
+    sc.updateProjectionMatrix();
+  }
   for (const o of hidden) o.visible = false;
   updateFogCull();
 

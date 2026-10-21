@@ -46,6 +46,22 @@ export function createCameraRig(ctx) {
     }
     return hits;
   }
+  const ARM_SOLID = new Set(['building', 'fountain', 'statue', 'tree', 'lamp', 'rock', 'sign']);
+  let arm = 8;
+  function solidAt(x, z) {
+    let hit = false;
+    ctx.colliders.query(x, z, 0.6, (sh) => {
+      if (hit || !ARM_SOLID.has(sh.tag)) return;
+      if (sh.type === 0) hit = Math.hypot(x - sh.x, z - sh.z) < sh.r + 0.5;
+      else {
+        const sx = sh.bx - sh.ax, sz = sh.bz - sh.az, L2 = sx * sx + sz * sz || 1;
+        const u = clamp(((x - sh.ax) * sx + (z - sh.az) * sz) / L2, 0, 1);
+        hit = Math.hypot(x - sh.ax - sx * u, z - sh.az - sz * u) < sh.pad + 0.5;
+      }
+    });
+    return hit;
+  }
+
   function photoShot(ph) {
     if (ph.view) return { cam: ph.view.cam, look: ph.view.look, fov: ph.view.fov };
     const H = ctx.terrain.heightAt;
@@ -102,7 +118,14 @@ export function createCameraRig(ctx) {
         const up = (portrait ? 5 : 3.9) + sp * 0.025;
         k = 1 - Math.exp(-dt * 6);
         const cx = cart.position.x, cz = cart.position.z, cy = cart.position.y;
-        wantPos.set(cx - fx * back, cy + up, cz - fz * back);
+        // spring arm: never sit inside a monument, fountain or tree behind the cart
+        let free = back;
+        for (let d = 1.5; d < back; d += 0.6) {
+          if (solidAt(cx - fx * d, cz - fz * d)) { free = Math.max(3, d - 0.8); break; }
+        }
+        arm = instant || free < arm ? free : arm + (free - arm) * (1 - Math.exp(-dt * 1.5));
+        const lift = (back - arm) * 0.3;
+        wantPos.set(cx - fx * arm, cy + up + lift, cz - fz * arm);
         const ground = H(wantPos.x, wantPos.z) + 1.6;
         if (wantPos.y < ground) wantPos.y = ground;
         wantLook.set(cx + fx * 5, cy + 1.6, cz + fz * 5);

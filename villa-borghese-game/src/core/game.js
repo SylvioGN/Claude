@@ -157,7 +157,7 @@ export function createGame(ctx, hotData = null) {
       game.currentStop = null;
       game.turnTowardNext(stop);
       ctx.cart?.freeze?.(false);
-      ctx.camRig.setMode('chase', { snap: true });
+      ctx.camRig.setMode('chase'); // glide from the photo viewpoint back behind the cart
       // auto-gas waits for the player's first touch so nobody drives into the monument
       game._holdAuto = true;
       game._closedAt = ctx.time;
@@ -199,6 +199,8 @@ export function createGame(ctx, hotData = null) {
     keepDriving() { if (game.state === 'finished') game.setState('playing'); },
 
     resetTour() {
+      // back to the start first, so the new first target is the terrace right ahead
+      if (ctx.cart && game._placed) ctx.cart.reset(game.start.x, game.start.z, game.start.heading);
       for (const s of stops) s.visited = false;
       game.score.gelato = 0; game.score.bumps = 0; game.score.pinecones = 0;
       game.tourTime = 0; game._celebrated = false; game.target = null;

@@ -167,6 +167,11 @@ export function createFx(ctx, scene) {
   // --- speech bubbles: one sprite per phrase, created on first use
   const bubbles = new Map();
   const active = [];
+  // one hidden bubble from the start, so the boot-time shader warm-up covers bubble sprites
+  const warm = util.textSprite('Ciao!', { height: 0.95, font: '800 60px system-ui, sans-serif', color: '#3a2412', bg: 'rgba(255,255,255,0.94)', pad: 26 });
+  warm.material.depthTest = true;
+  warm.visible = false;
+  scene.add(warm);
   function bubble(text, x, y, z, dur = 1.6) {
     let b = bubbles.get(text);
     if (!b) {

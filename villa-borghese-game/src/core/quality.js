@@ -30,8 +30,11 @@ export function detectQuality(params) {
     const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
     const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || coarse;
     const cores = navigator.hardwareConcurrency || 4;
-    const mem = navigator.deviceMemory || 4;
+    // Safari and Firefox don't report memory (or cores, on iOS): treat unknown as capable and let
+    // the adaptive step-down below protect older devices.
+    const mem = navigator.deviceMemory ?? 8;
     if (!mobile) tier = cores >= 6 ? 'high' : 'med';
+    else if (/Apple GPU/i.test(gpu)) tier = 'med';
     else tier = cores >= 8 && mem >= 6 && !WEAK_GPU.test(gpu) ? 'med' : 'low';
   }
   const q = { tier, gpu, ...TIERS[tier] };

@@ -498,6 +498,7 @@ export async function create(ctx) {
     node.classList.remove('pop');
     void node.offsetWidth;
     node.classList.add('pop');
+    node.addEventListener('animationend', () => node.classList.remove('pop'), { once: true });
   }
   function floater(node, text) {
     const r = node.getBoundingClientRect(), rr = root.getBoundingClientRect();
@@ -514,6 +515,7 @@ export async function create(ctx) {
   }
   let lastOops = -10;
   const oopsEl = q('.oops', hud);
+  oopsEl.addEventListener('animationend', () => oopsEl.classList.remove('show'));
 
   ev.on('collect', (e) => {
     if (e.kind === 'gelato') { refreshHud(); pop(hGel); floater(hGel, `+${e.value || 1}`); }
@@ -806,11 +808,18 @@ export async function create(ctx) {
   // ---------- photo album ----------
   let album = {};
   try { album = JSON.parse(storeGet(ALBUM_KEY) || '{}') || {}; } catch { album = {}; }
+  let albumStorable = true;
   function saveAlbum() {
+    if (!albumStorable) return;
     if (storeSet(ALBUM_KEY, JSON.stringify(album))) return;
-    // storage full: keep the newest photos only
+    // storage full or blocked: store the newest photos that fit, keep them all for this visit
     const ids = Object.keys(album).sort((a, b) => album[b].t - album[a].t);
-    while (ids.length > 4) { delete album[ids.pop()]; if (storeSet(ALBUM_KEY, JSON.stringify(album))) return; }
+    const copy = { ...album };
+    while (ids.length > 1) {
+      delete copy[ids.pop()];
+      if (storeSet(ALBUM_KEY, JSON.stringify(copy))) return;
+    }
+    albumStorable = false; // storage unavailable: stop trying for the rest of the session
   }
   function openAlbum() {
     const have = stops.filter((s) => album[s.id]).length;
@@ -1089,6 +1098,7 @@ export async function create(ctx) {
       if (Math.abs(ti.steer) < 0.01 && steerTarget === 0) ti.steer = 0;
 
       updatePhoto(dt);
+      ctlEls.gas.classList.toggle('nudge', G.state === 'playing' && !!G._holdAuto);
       if (G.state !== 'playing') return;
       playTime += dt;
       if (playTime > 18 && !keysHint.hidden) keysHint.hidden = true;
